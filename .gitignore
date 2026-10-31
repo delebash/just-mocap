@@ -6,3 +6,4 @@ rgbmocap/
 tmp/
 node_modules/
 __pycache__/
+data/
