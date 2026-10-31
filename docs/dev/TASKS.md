@@ -9,9 +9,9 @@
 - 2026-10-31: "best means best quality you can get with acceptable perfomance for my machine"
 - 2026-10-31: "ExMR or FlowHMR its oke not to run these yet asw they are not for commercial i what 2 iptions best non commercial best commercial"
 
-## Open
-
 - 2026-10-31: "you should focus on what we can user commercially first"
+
+## Open
 
 1. Commercial option, first: GEM-X + EgoHand, with `video2mocap` (github.com/freddysae0/video2mocap) as the cleanup base, then Kimodo MotionCorrection, the SOMA smoother, retarget and export. Blocked: the permission system refuses the install, so the user runs `bench/setup_gemx.sh`. WSL isn't installed here; the script targets native Windows, unproven.
 2. Commercial fallback: SAM 3D Body. Rerun the guitarist with SAM 3.1 tracking on, because the one-box run jumped to a passer-by.
