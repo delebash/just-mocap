@@ -10,6 +10,7 @@
 - 2026-10-31: "ExMR or FlowHMR its oke not to run these yet asw they are not for commercial i what 2 iptions best non commercial best commercial"
 
 - 2026-10-31: "you should focus on what we can user commercially first"
+- 2026-10-31: "if it has no fingers that is not acceptable it has to have profressinal quality all parts"
 
 ## Open
 
