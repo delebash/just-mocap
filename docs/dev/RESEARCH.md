@@ -9,6 +9,17 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-10-31, re-score of all four clips, `bench/matched_hands.js`, no card used
+
+The same physical hand, the same frames, image pixels for the 2D columns. Person's left hand then right, inner 10 finger joints, degrees per frame², usable frames in brackets:
+
+- `woman_holding_water_glass.mp4` (62, 148): SAM 3D Body raw 2.25, 1.76; smoothed 0.94, 0.48. MediaPipe world 10.26, 8.56; image 7.49, 4.88.
+- `man_playing_violin.mp4` (119, 119): SAM 3D Body raw 1.18, 3.48; smoothed 0.35, 1.07. MediaPipe world 3.11, 3.77; image 3.02, 2.71. RTMW-x image 12.80, 9.80.
+- `subway_guitar_busker.mp4` (106, 119): SAM 3D Body void, person switching. MediaPipe world 10.84, 12.47; image 16.09, 9.47. RTMW-x image 11.24, 23.21.
+- `street_dancer.mp4` (5, 1): too few frames, no comparison.
+
+SAM 3D Body's spread is about half MediaPipe's image spread on the woman and the violinist's left hand, and the two methods' bends barely correlate (0.40 at best). So steadiness here doesn't show accuracy.
+
 ### 2026-10-31, `woman_holding_water_glass.mp4`, ComfyUI's sample, 1280×720, 150 frames, waist-up, static camera
 
 - SAM 3D Body bf16 through ComfyUI 0.43.0: 0.32 s a frame with hands at batch 8, 4,853 MiB peak with the desktop. 0.15 s a frame without hands, 3,925 MiB.

@@ -2,5 +2,7 @@ in/
 out/
 models/
 gemx/
+rgbmocap/
+tmp/
 node_modules/
 __pycache__/
