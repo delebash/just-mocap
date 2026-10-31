@@ -1,0 +1,4 @@
+{"tag":"wire","batch":2,"hands":true,"seconds":0.34,"status":"success","elapsed":14.163,"peakMiB":4056}
+{"tag":"full-b4-hands","batch":4,"hands":true,"seconds":5,"status":"success","elapsed":71.153,"peakMiB":6133}
+{"tag":"speed-b8-hands","batch":8,"hands":true,"seconds":5,"status":"success","elapsed":48.786,"peakMiB":4853}
+{"tag":"speed-b4-body","batch":4,"hands":false,"seconds":5,"status":"success","elapsed":22.574,"peakMiB":3925}
