@@ -8,10 +8,10 @@
 
 ## Open
 
-1. Commercial option: test SAM 3D Body on a harder clip (full body, fast motion, small hands).
+1. Commercial option: rerun the guitarist with SAM 3.1 tracking on, because the one-box run jumped to a passer-by. Then check the root path on a walking clip, and what cleanup can use without a contact source.
 2. Commercial option: test GEM-X + EgoHand. Blocked: the permission system refused the install. `bench/setup_gemx.sh` is written and unrun; the user decides.
 3. Non-commercial option: test ExMR, FlowHMR and GVHMR + HandFlow through RGB MoCap. Needs the same permission, plus the user's SMPL-X and MANO registration.
 4. Run the winners on a real clip of the user: full body, 1080p, hand gestures, walking. Clip not supplied yet.
 5. Add cleanup to the winner: contacts, SO(3) smoothing, retarget, then export. Kimodo MotionCorrection and the SOMA smoother are the candidates.
-6. Live webcam: measure RTMW with hand crops against MediaPipe with a One Euro filter, whole pipeline, on this card.
+6. Live webcam: MediaPipe with a causal filter is the default. Measure a real hand model on crops (RTMPose hand) against it on this card, and try SAM 3D Body as ONNX through the kit's DirectML runtime.
 7. End with one real shot: route A (3D guide) or route B (pose clip), research section 7.
