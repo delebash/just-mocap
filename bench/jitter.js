@@ -80,10 +80,14 @@ function bend(a, b, c) {
   return (Math.acos(Math.min(1, Math.max(-1, dot / lengths))) * 180) / Math.PI;
 }
 
+// Optional frame window, e.g. WINDOW=38-121, so a hand out of view isn't scored.
+const [from, to] = (process.env.WINDOW ?? "0-99999").split("-").map(Number);
+
 function score(series) {
   const secondDifferences = [];
   const spreads = [];
-  for (const run of series) {
+  for (const full of series) {
+    const run = full.slice(from, to + 1);
     const known = run.filter((v) => v !== null);
     if (known.length < 3) continue;
     const mean = known.reduce((s, v) => s + v, 0) / known.length;
