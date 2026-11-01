@@ -297,4 +297,15 @@ for (const side of ["left", "right"]) {
     const offset = side === "left" ? 91 : 112;
     score2D("RTMW 2D", rtmw.slice(0, count).map((f) => f.slice(offset, offset + 21).map((p) => p.slice(0, 2))), side);
   }
+  if (process.env.GEM_POINTS) {
+    const gem = JSON.parse(readFileSync(process.env.GEM_POINTS, "utf8"));
+    const wrong = side === "left" ? "right" : "left";
+    score3D("GEM-X fingers", gem.gem[side], side);
+    score3D("GEM-X other side", gem.gem[wrong], side);
+    score2D("GEM-X 2D points", gem.gem2d[side], side);
+    score3D("EgoHand raw", gem.ego[side], side);
+    score3D("EgoHand smoothed", gem.egoSmooth[side], side);
+    score3D("EgoHand other", gem.ego[wrong], side);
+    score2D("EgoHand 2D", gem.ego2d[side], side);
+  }
 }
