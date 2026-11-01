@@ -303,9 +303,11 @@ for (const side of ["left", "right"]) {
     score3D("GEM-X fingers", gem.gem[side], side);
     score3D("GEM-X other side", gem.gem[wrong], side);
     score2D("GEM-X 2D points", gem.gem2d[side], side);
-    score3D("EgoHand raw", gem.ego[side], side);
-    score3D("EgoHand smoothed", gem.egoSmooth[side], side);
-    score3D("EgoHand other", gem.ego[wrong], side);
-    score2D("EgoHand 2D", gem.ego2d[side], side);
+    if (gem.ego[side].length) {
+      score3D("EgoHand raw", gem.ego[side], side);
+      score3D("EgoHand smoothed", gem.egoSmooth[side], side);
+      score3D("EgoHand other", gem.ego[wrong], side);
+      score2D("EgoHand 2D", gem.ego2d[side], side);
+    }
   }
 }

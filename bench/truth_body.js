@@ -52,6 +52,45 @@ function fit(source, target) {
   return (p) => rotate(subtract(p, cs)).map((v, k) => v * factor + ct[k]);
 }
 
+// Where the real ankle stays planted: at least 8 frames with the measured ankle under 0.15 m/s.
+const [LEFT_ANKLE, RIGHT_ANKLE, STILL_CM_PER_FRAME, SHORTEST_STANCE] = [5, 11, 0.5, 8];
+function stances() {
+  const list = [];
+  for (const j of [LEFT_ANKLE, RIGHT_ANKLE]) {
+    const still = (t) => {
+      const [a, b] = [truth[t - 2]?.[j], truth[t + 2]?.[j]];
+      return a && b && Math.hypot(...subtract(b, a)) / 4 < STILL_CM_PER_FRAME;
+    };
+    let first = -1;
+    for (let t = 2; t <= count; t += 1) {
+      if (t < count && still(t)) {
+        if (first < 0) first = t;
+      } else {
+        if (first >= 0 && t - first >= SHORTEST_STANCE) list.push({ j, frames: Array.from({ length: t - first }, (_, n) => first + n) });
+        first = -1;
+      }
+    }
+  }
+  return list;
+}
+const planted = stances();
+
+// slide: how far the ankle wanders along the floor from its own stance point (Panoptic's up axis is y).
+// float: how much stance height changes from step to step, so a steady floor scores low.
+function feet(frames) {
+  const slides = [];
+  const heights = [];
+  for (const { j, frames: list } of planted) {
+    const points = list.map((t) => frames[t]?.[j]).filter(Boolean);
+    if (points.length < list.length) continue;
+    const [cx, cy, cz] = [0, 1, 2].map((k) => mean(points.map((p) => p[k])));
+    slides.push(mean(points.map((p) => Math.hypot(p[0] - cx, p[2] - cz))));
+    heights.push(cy);
+  }
+  const middle = mean(heights);
+  return { slide: mean(slides) * 10, float: Math.sqrt(mean(heights.map((h) => (h - middle) ** 2))) * 10 };
+}
+
 function score(name, frames) {
   const used = frames.map((f, t) => (f && truth[t] ? t : -1)).filter((t) => t >= 0);
   const pose = used.map((t) => {
@@ -72,12 +111,29 @@ function score(name, frames) {
       shake.push(Math.hypot(...a));
     }
   }
+  if (process.env.BY_JOINT) {
+    const parts = ["shoulder", "elbow", "wrist", "hip", "knee", "ankle"].map((part, p) => {
+      const errors = used.map((t) => {
+        const apply = fit(frames[t], truth[t]);
+        return (Math.hypot(...subtract(apply(frames[t][p]), truth[t][p])) + Math.hypot(...subtract(apply(frames[t][p + 6]), truth[t][p + 6]))) / 2;
+      });
+      return `${part} ${(mean(errors) * 10).toFixed(0)}`;
+    });
+    console.log(`    ${name} pose by joint, mm: ${parts.join(", ")}`);
+    const ARMS = [0, 1, 2, 6, 7, 8];
+    const pick = (list) => ARMS.map((j) => list[j]);
+    const arms = used.map((t) => {
+      const apply = fit(pick(frames[t]), pick(truth[t]));
+      return mean(ARMS.map((j) => Math.hypot(...subtract(apply(frames[t][j]), truth[t][j]))));
+    });
+    console.log(`    ${name} arms and shoulders alone: ${(mean(arms) * 10).toFixed(1)} mm`);
+  }
   const hipPath = (list) => used.map((t) => [0, 1, 2].map((k) => (list[t][3][k] + list[t][9][k]) / 2));
   const [mine, real] = [hipPath(aligned), hipPath(truth)];
   const pathError = mean(mine.map((p, i) => Math.hypot(...subtract(p, real[i]))));
   const range = (list) => Math.max(...[0, 1, 2].map((k) => Math.max(...list.map((p) => p[k])) - Math.min(...list.map((p) => p[k]))));
   console.log(
-    `  ${name.padEnd(22)} pose ${(mean(pose) * 10).toFixed(1).padStart(6)} mm  motion ${(mean(motion) * 10).toFixed(1).padStart(6)} mm  accel err ${(mean(accel) * 10).toFixed(2).padStart(6)}  shake ${(mean(shake) * 10).toFixed(2).padStart(6)}  hip path err ${(pathError * 10).toFixed(1).padStart(6)} mm  hip travel ${(range(mine) * 10).toFixed(0).padStart(5)} mm (real ${(range(real) * 10).toFixed(0)})`,
+    `  ${name.padEnd(22)} pose ${(mean(pose) * 10).toFixed(1).padStart(6)} mm  motion ${(mean(motion) * 10).toFixed(1).padStart(6)} mm  accel err ${(mean(accel) * 10).toFixed(2).padStart(6)}  shake ${(mean(shake) * 10).toFixed(2).padStart(6)}  hip path err ${(pathError * 10).toFixed(1).padStart(6)} mm  hip travel ${(range(mine) * 10).toFixed(0).padStart(5)} mm (real ${(range(real) * 10).toFixed(0)})  foot slide ${feet(aligned).slide.toFixed(1).padStart(5)} mm  float ${feet(aligned).float.toFixed(1).padStart(5)} mm`,
   );
 }
 
@@ -150,8 +206,7 @@ function readBvh(path, swapLegs) {
 }
 
 console.log(`frames with one person measured: ${truth.filter(Boolean).length} of ${count}`);
-score("SAM legs as listed", readBvh(rawFile, false));
-score("SAM legs swapped", readBvh(rawFile, true));
+console.log(`planted stances: ${planted.length}, ${planted.reduce((s, p) => s + p.frames.length, 0)} ankle frames; measured truth itself: foot slide ${feet(truth).slide.toFixed(1)} mm, float ${feet(truth).float.toFixed(1)} mm`);
 const pick = process.env.SWAP_LEGS === "1";
 score("SAM 3D Body raw", readBvh(rawFile, pick));
 score("SAM 3D Body smoothed", readBvh(smoothFile, pick));

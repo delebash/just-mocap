@@ -14,8 +14,8 @@
 
 ## Open
 
-1. Commercial option, first: GEM-X + EgoHand, with `video2mocap` (github.com/freddysae0/video2mocap) as the cleanup base, then Kimodo MotionCorrection, the SOMA smoother, retarget and export. Blocked: the permission system refuses the install, so the user runs `bench/setup_gemx.sh`. WSL isn't installed here; the script targets native Windows, unproven.
-2. Commercial fallback: SAM 3D Body. Rerun the guitarist with SAM 3.1 tracking on, because the one-box run jumped to a passer-by.
+1. Commercial option, first: GEM-X for body, feet and world path with contact IK, plus SAM 3D Body's fingers joined at the wrist, measured in research section 12. GEM-X runs here on native Windows, in `gemx/`. Still to do, in order: the join; face and eyes through `SAM3DBody_FaceExpression`; `video2mocap` (github.com/freddysae0/video2mocap) cleanup and export, then Kimodo MotionCorrection, the SOMA smoother and retarget.
+2. Commercial body fallback: SAM 3D Body. Rerun the guitarist with SAM 3.1 tracking on, because the one-box run jumped to a passer-by.
 3. Non-commercial option: ExMR through RGB MoCap. Not yet, by the user's word. The clone is in `rgbmocap/`. It needs `install.cmd`, SMPL-X, MANO and Meta's SAM 3D Body file.
 4. Judge each option on a real clip of the user: full body, 1080p, hand gestures, walking. Clip not supplied yet. Compare against QuickMagic's output of the same clip if the user can run one.
 5. Live webcam comes after video quality is proven: open question for the user, not decided.

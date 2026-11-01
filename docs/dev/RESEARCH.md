@@ -9,6 +9,15 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-10-31, walking against CMU Panoptic, `bench/truth_body.js` and `bench/truth_hands.js`
+
+Clips `pan_walk4648.mp4` and `pan_walk13858.mp4`, 300 frames, 1080p, camera 00_07, static. Full tables are in research section 12.
+
+- Body: GEM-X with contact IK wins both clips on every score. Motion 79-83 mm against SAM 3D Body's 173-186 mm. Foot slide 3.1-3.3 mm against 20.0-26.6 mm, where the measured data's own wander is 3.4-4.6 mm. Raw GEM-X slides 23.9-25.4 mm, so contact IK is needed.
+- Both standing clips have the legs out of frame. GEM-X loses clip 2338 on pose and ties 20728. On arms and shoulders alone it wins all four clips, 17-28 mm against 25-38 mm.
+- Fingers with hands about 50 px: SAM 3D Body and GEM-X about tied, neither professional, bend error up to 18°.
+- Speed for 10 s: SAM 3D Body 113-120 s, GEM-X 273-280 s.
+
 ### 2026-10-31, re-score of all four clips, `bench/matched_hands.js`, no card used
 
 The same physical hand, the same frames, image pixels for the 2D columns. Person's left hand then right, inner 10 finger joints, degrees per frame², usable frames in brackets:

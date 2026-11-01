@@ -1,5 +1,5 @@
 """Turns GEM-X body and EgoHand results into the 21 hand points that truth_hands.js scores. CPU only.
-Run from the GEM-X folder with its venv: python gem_points.py <gem.pt> <ego.pt> <out.json>
+Run from the GEM-X folder with its venv: python gem_points.py <gem.pt> <ego.pt|-> <out.json>
 """
 
 import json
@@ -42,7 +42,7 @@ for key, side in (("left", "Left"), ("right", "Right")):
     result["gem"][key] = (joints[:, ids] * 100).tolist()
     result["gem2d"][key] = kp2d[:, ids, :2].tolist()
 
-ego = torch.load(ego_file, map_location="cpu", weights_only=False)
+ego = torch.load(ego_file, map_location="cpu", weights_only=False) if ego_file != "-" else {"frames": []}
 for frame in ego["frames"]:
     seen = {}
     for instance in frame["instances"]:
