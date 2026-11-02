@@ -13,6 +13,8 @@ Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
 Clip 2338. The BVH (77 SOMA joints, cm, Y up) read back matches the posed skeleton to 0.001 mm; the BVH and the FBX, imported back into Blender 5.3, match to 0.002 mm. The FBX keys start at time 0, like the video. Face curves go out in Live Link Face's CSV layout. Drawn on the video, the body sits on the person and the hand shapes match by eye.
 
+Finger smoothing (SOMA's RTS smoother, hand gains, fingers only), all four clips: default cuts finger shake to about a quarter (close 0.85-1.06 to 0.23-0.29 deg/frame², far 2.26-2.88 to 0.63-0.68) with no loss on shape, bend, following or movement shown; strong cuts it to about a twelfth but costs up to 0.7 mm of shape close up and up to 8 points of movement shown. `mocap.js` uses default. Table in research section 14.
+
 Bug found on the way: py-soma-x 0.3.3's `rotvec_to_matrix` is wrong for any real angle, and the join used it, so every body joint in the joined pose was off (feet up to 860 mm). Fixed with SciPy. The finger scores stand (clip 2338: 8.0 and 7.4 mm against 8.0 and 7.5), because they align each hand first.
 
 ### 2026-11-02, face and eyes, `bench/truth_face_mf.js` against Meta's Multiface
