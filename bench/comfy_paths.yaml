@@ -1,0 +1,3 @@
+# Passed to ComfyUI with --extra-model-paths-config, so our save node loads without changing the shared install.
+just_mocap:
+  custom_nodes: E:/Dev/Web/just-mocap/bench/comfy_nodes

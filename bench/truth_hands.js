@@ -303,6 +303,12 @@ for (const side of ["left", "right"]) {
     score3D("GEM-X fingers", gem.gem[side], side);
     score3D("GEM-X other side", gem.gem[wrong], side);
     score2D("GEM-X 2D points", gem.gem2d[side], side);
+    if (process.env.JOIN_POINTS) {
+      const join = JSON.parse(readFileSync(process.env.JOIN_POINTS, "utf8"));
+      score3D("SAM in SOMA", join.samSoma[side], side);
+      score3D("GEM-X + SAM fingers", join.joined[side], side);
+      score3D("joined other side", join.joined[wrong], side);
+    }
     if (gem.ego[side].length) {
       score3D("EgoHand raw", gem.ego[side], side);
       score3D("EgoHand smoothed", gem.egoSmooth[side], side);

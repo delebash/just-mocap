@@ -1,6 +1,8 @@
 // One honest run of SAM 3D Body on one clip: models unloaded first, each stage timed from ComfyUI's own events, the card
 // sampled every 250 ms. Writes raw and smoothed BVH with the root path on, and an overlay to look at.
-// Run: node run_full.js <clip.mp4> <batch> [hands 1|0] [overlay 1|0]
+// mesh 1 also saves the raw per-frame MHR mesh and parameters to an .npz; ComfyUI must be started with
+// --extra-model-paths-config bench/comfy_paths.yaml so the save node loads.
+// Run: node run_full.js <clip.mp4> <batch> [hands 1|0] [overlay 1|0] [mesh 1|0]
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
@@ -8,7 +10,7 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const base = "127.0.0.1:8199";
-const [file, batch, hands = "1", overlay = "1"] = process.argv.slice(2);
+const [file, batch, hands = "1", overlay = "1", mesh = "0"] = process.argv.slice(2);
 const tag = `${file.replace(/\.[^.]+$/, "")}-b${batch}${hands === "1" ? "" : "-body"}`;
 
 await fetch(`http://${base}/free`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ unload_models: true, free_memory: true }) });
@@ -52,6 +54,7 @@ if (overlay === "1") {
   };
   prompt[14] = { class_type: "SaveImage", inputs: { images: ["13", 0], filename_prefix: `mocap/${tag}/f` } };
 }
+if (mesh === "1") prompt[15] = { class_type: "JustMocapSaveMHR", inputs: { mhr_pose_data: ["7", 0], filename_prefix: `mocap/${tag}-mhr` } };
 const names = { 1: "load", 3: "decode", 4: "detector load", 5: "detect", 6: "sam load", 7: "predict", 8: "smooth", 9: "bvh raw", 11: "bvh smooth", 13: "render", 14: "save images" };
 
 const clientId = randomUUID();
