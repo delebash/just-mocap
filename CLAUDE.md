@@ -6,7 +6,7 @@ goes into the kit so JustDirect and JustStage share one way to do the job.
 
 - Open work: `docs/dev/TASKS.md`. Measured results and pointers: `docs/dev/RESEARCH.md`. Unscheduled ideas: `docs/dev/IDEAS.md`.
 - The research this rests on: `../just-core/docs/plans/2026-10-31-just-direct-research-mocap.md` and the notes beside it.
-- `bench/` holds the test scripts and `runs.jsonl`. `in/`, `out/`, `models/` and `gemx/` hold media and weights, and git ignores them.
+- `bench/` holds the test scripts and `runs.jsonl`. `node bench/mocap.js <clip in in/>` runs one clip from video to BVH, FBX, face CSV and a preview, in `out/take/<clip>/`. `in/`, `out/`, `models/` and `gemx/` hold media and weights, and git ignores them.
 - JavaScript here is ES modules. `mp_hands.py` is Python because MediaPipe's tool environment is.
 - The graphics card is shared. Message the other sessions before and after using it, and say "card free" when done.
 - Nothing on C:. Pip, Hugging Face and temp folders point at E:.

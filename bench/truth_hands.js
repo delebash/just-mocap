@@ -166,8 +166,8 @@ function score3D(name, tracks, side) {
   const rows = BENDS.map(() => ({ method: [], truth: [] }));
   for (let t = 0; t < count; t += 1) {
     const [p, q] = [tracks[t], truth[side][t]];
-    if (!q) continue;
-    if (!p) {
+    if (!p || !q) {
+      // Keep the frame's slot, so frame-to-frame measures never join frames across a gap.
       rows.forEach((r) => r.method.push(null) && r.truth.push(null));
       continue;
     }
@@ -191,12 +191,16 @@ function score3D(name, tracks, side) {
     const list = BENDS.map((b, i) => (b.finger === f ? corr[i] : null)).filter((v) => v !== null && v !== undefined);
     return `${n} ${mean(list).toFixed(2)}`;
   });
+  // Shake: each bend's second difference over three frames in a row, degrees per frame squared. The truth's own figure
+  // is printed beside it, but it carries the measuring noise of a per-frame triangulation, so it is no target.
+  const shake = (series) => median(series.flatMap((s) => s.slice(2).map((v, i) => (v !== null && s[i] !== null && s[i + 1] !== null ? Math.abs(v - 2 * s[i + 1] + s[i]) : null)).filter((v) => v !== null)));
+  const [shakeMethod, shakeTruth] = [shake(rows.map((r) => r.method)), shake(rows.map((r) => r.truth))];
   const truthMoves = NAMES.map((n, f) => {
     const list = rows.filter((_, i) => BENDS[i].finger === f).map((r) => spread(r.truth));
     return `${n} ${mean(list).toFixed(1)}`;
   });
   console.log(
-    `  ${name.padEnd(16)} ${side.padEnd(5)} frames ${String(errors.length).padStart(3)}  shape ${median(errors).toFixed(1).padStart(5)} mm  bend error ${median(rmse).toFixed(1).padStart(5)} deg  follows truth ${median(corr).toFixed(2).padStart(5)}  movement ${(median(ratio) * 100).toFixed(0).padStart(4)}%  truth moves deg [${truthMoves.join(", ")}]`,
+    `  ${name.padEnd(16)} ${side.padEnd(5)} frames ${String(errors.length).padStart(3)}  shape ${median(errors).toFixed(1).padStart(5)} mm  bend error ${median(rmse).toFixed(1).padStart(5)} deg  follows truth ${median(corr).toFixed(2).padStart(5)}  movement ${(median(ratio) * 100).toFixed(0).padStart(4)}%  shake ${shakeMethod.toFixed(2)} (measured ${shakeTruth.toFixed(2)}) deg/frame²  truth moves deg [${truthMoves.join(", ")}]`,
   );
 }
 

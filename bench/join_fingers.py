@@ -7,27 +7,44 @@ joints are copied into GEM-X's pose; GEM-X keeps its body, wrists and world path
 Writes two point sets: "samSoma" is SAM 3D Body's whole pose in SOMA (the conversion alone), "joined" is GEM-X's body
 with SAM's fingers. Scoring both against the truth shows what the conversion loses and what the join loses.
 
-Run from the GEM-X folder with its venv: python join_fingers.py <gem.pt> <sam-mhr.npz> <out.json> [repose 1|0] [fit json]
+Run from the GEM-X folder with its venv:
+  python join_fingers.py <gem.pt> <sam-mhr.npz> <out.json> [repose 1|0] [fit json] [frame|mean] [none|default|strong]
 The optional fit json passes PoseInversion.fit arguments, e.g. '{"finger_iters": 2, "lie_iters": 5}'.
+The last argument smooths the copied finger rotations over time with SOMA's own RTS smoother on SO(3), using that
+preset's hand gains; GEM-X's body is left as it is. The joined parameters are also saved beside the json, as .npz.
 """
 
 import json
 import sys
+from pathlib import Path
 
 import numpy as np
 import torch
 from soma import SOMALayer, Unit
 from soma.fitting import PoseInversion
+from soma.fitting.rts_smoothing import RTS_SMOOTHING_PRESETS, rts_smooth_rotations
 from soma.geometry.rig_utils import precompute_joint_orient, remove_joint_orient_local
-from soma.geometry.transforms import matrix_to_rotvec, rotvec_to_matrix
+from scipy.spatial.transform import Rotation
 
 from gem.motion.geometry import MotionGeometry
 
+# Not soma.geometry.transforms.rotvec_to_matrix: in py-soma-x 0.3.3 it scales a unit axis by sin(t)/t, so a 90-degree
+# turn comes out as a 51-degree non-rotation. Its matrix_to_rotvec is right, but one library for both directions is safer.
+
+
+def rotvec_to_matrix(rotvec):
+    return torch.from_numpy(Rotation.from_rotvec(rotvec.reshape(-1, 3).double().numpy()).as_matrix()).reshape(*rotvec.shape, 3).float()
+
+
+def matrix_to_rotvec(matrix):
+    return torch.from_numpy(Rotation.from_matrix(matrix.reshape(-1, 3, 3).double().numpy()).as_rotvec()).reshape(*matrix.shape[:-1]).float()
+
 gem_file, sam_file, out_file = sys.argv[1:4]
 repose = (sys.argv[4] if len(sys.argv) > 4 else "1") == "1"
-fit_options = json.loads(sys.argv[5]) if len(sys.argv) > 5 else {}
+fit_options = json.loads(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] != "-" else {}
 # "frame" fits each frame with SAM's own shape for that frame; "mean" uses one average shape for the clip.
 shape_mode = sys.argv[6] if len(sys.argv) > 6 else "frame"
+smoothing = sys.argv[7] if len(sys.argv) > 7 else "none"
 FINGERS = ("Thumb", "Index", "Middle", "Ring", "Pinky")
 
 
@@ -80,6 +97,9 @@ if [str(n) for n in names] != public[1:]:
     raise SystemExit("GEM-X and the MHR layer list SOMA's joints differently")
 
 
+fps = float(gem["sampling_fps"])
+
+
 def joined(key):
     params = {k: v.float().clone() for k, v in gem[key].items()}
     length = params["body_pose"].shape[1]
@@ -87,14 +107,24 @@ def joined(key):
         raise SystemExit(f"GEM-X has {length} frames, SAM 3D Body {relative.shape[0]}")
     pose = rotvec_to_matrix(params["body_pose"].reshape(1, length, 76, 3))
     use = found[None, :, None]
-    pose[:, :, finger_ids] = torch.where(use[..., None, None], relative[None, :, 1:][:, :, finger_ids], pose[:, :, finger_ids])
+    fingers = torch.where(use[..., None, None], relative[None, :, 1:][:, :, finger_ids], pose[:, :, finger_ids])
+    if smoothing != "none":
+        fingers = rts_smooth_rotations(fingers[0], fps=fps, gains=RTS_SMOOTHING_PRESETS[smoothing].hand)[None]
+    pose[:, :, finger_ids] = fingers
     params["body_pose"] = matrix_to_rotvec(pose).reshape(1, length, 228)
-    return geometry(params)["joints"][0]
+    return params, geometry(params)["joints"][0]
 
 
-out = {"vertexErrorMm": error_mm, "repose": repose, "samSoma": {}, "joined": {}, "joinedWorld": {}}
-joints_incam = joined("pred_soma_params_incam")
-joints_world = joined("pred_soma_params_global")
+out = {"vertexErrorMm": error_mm, "repose": repose, "smoothing": smoothing, "samSoma": {}, "joined": {}, "joinedWorld": {}}
+params_incam, joints_incam = joined("pred_soma_params_incam")
+params_world, joints_world = joined("pred_soma_params_global")
+np.savez_compressed(
+    Path(out_file).with_suffix(".npz"),
+    fps=fps,
+    found=found.numpy(),
+    **{f"incam_{k}": v[0].numpy() for k, v in params_incam.items()},
+    **{f"world_{k}": v[0].numpy() for k, v in params_world.items()},
+)
 index = {name: i for i, name in enumerate(public[1:])}
 for key, side in (("left", "Left"), ("right", "Right")):
     ids = [index[n] for n in body_to_21(side)]
@@ -103,4 +133,4 @@ for key, side in (("left", "Left"), ("right", "Right")):
     out["joinedWorld"][key] = (joints_world[:, ids] * 100).tolist()
 with open(out_file, "w") as handle:
     json.dump(out, handle)
-print(f"frames {int(found.sum())} of {len(found)}, mesh fit error {error_mm:.1f} mm, finger joints copied {len(finger_ids)}, repose {repose}")
+print(f"frames {int(found.sum())} of {len(found)}, mesh fit error {error_mm:.1f} mm, finger joints copied {len(finger_ids)}, repose {repose}, smoothing {smoothing}")

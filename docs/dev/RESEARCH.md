@@ -9,6 +9,12 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-02, export to BVH, FBX and face CSV, `bench/export_mocap.py` and `bench/mocap.js`, research section 14
+
+Clip 2338. The BVH (77 SOMA joints, cm, Y up) read back matches the posed skeleton to 0.001 mm; the BVH and the FBX, imported back into Blender 5.3, match to 0.002 mm. The FBX keys start at time 0, like the video. Face curves go out in Live Link Face's CSV layout. Drawn on the video, the body sits on the person and the hand shapes match by eye.
+
+Bug found on the way: py-soma-x 0.3.3's `rotvec_to_matrix` is wrong for any real angle, and the join used it, so every body joint in the joined pose was off (feet up to 860 mm). Fixed with SciPy. The finger scores stand (clip 2338: 8.0 and 7.4 mm against 8.0 and 7.5), because they align each hand first.
+
 ### 2026-11-02, face and eyes, `bench/truth_face_mf.js` against Meta's Multiface
 
 GEM-X's jaw and eye joints barely move (eyes 0.01-0.08° spread). Panoptic `171204_pose1` has no usable face movement, so it can't rank face methods. On Multiface (one subject, eight posed sequences, front camera 400048, 428 of 440 frames found), MediaPipe Face Landmarker's points follow mouth opening at 0.99 and eye opening at 0.95-0.98, the same at full size, 140 px and 70 px faces; `jawOpen` 0.96, `eyeBlink` -0.91 to -0.95, `mouthSmile` 0.87; brows weaker, points 0.88-0.97 showing 65-72% of the movement, brow blendshapes 0.73-0.82. Gaze unmeasured: the mesh has no eyeballs. Full table in research section 13.
