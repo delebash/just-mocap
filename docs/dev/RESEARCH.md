@@ -9,6 +9,10 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-02, face and eyes, `bench/truth_face_mf.js` against Meta's Multiface
+
+GEM-X's jaw and eye joints barely move (eyes 0.01-0.08° spread). Panoptic `171204_pose1` has no usable face movement, so it can't rank face methods. On Multiface (one subject, eight posed sequences, front camera 400048, 428 of 440 frames found), MediaPipe Face Landmarker's points follow mouth opening at 0.99 and eye opening at 0.95-0.98, the same at full size, 140 px and 70 px faces; `jawOpen` 0.96, `eyeBlink` -0.91 to -0.95, `mouthSmile` 0.87; brows weaker, points 0.88-0.97 showing 65-72% of the movement, brow blendshapes 0.73-0.82. Gaze unmeasured: the mesh has no eyeballs. Full table in research section 13.
+
 ### 2026-11-02, SAM 3D Body fingers joined onto GEM-X, `bench/join_fingers.py`
 
 Same four clips. GEM-X body + SAM 3D Body fingers against SAM 3D Body alone, close clips 2338 and 20728: shape 7.5-9.1 mm against 7.3-8.6, bend error 7.5-11.2° against 8.5-11.7, follows 0.90-0.95 against 0.91-0.95, shown 78-86% against 86-101%. Far walks: about level with SAM 3D Body alone. GEM-X's own fingers were 13.4-20.2 mm and 49-66% shown close up. A shape per frame is needed: one average shape lost 4° and 0.24 of following on walk 4648's left hand. Full table in research section 12.

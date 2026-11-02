@@ -5,12 +5,10 @@
 // Run: node truth_hands.js <sequence folder> <first hd frame> <frames> <scale> <raw.bvh> <smooth.bvh> <mp.json|-> <rtmw.json|->
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { cameraProjector, correlation, mean, median, spread, subtract } from "./panoptic.js";
 
 const [folder, startArg, countArg, scaleArg, rawFile, smoothFile, mpFile, rtmwFile] = process.argv.slice(2);
 const [start, count, scale] = [Number(startArg), Number(countArg), Number(scaleArg)];
-const median = (list) => [...list].sort((a, b) => a - b)[Math.floor(list.length / 2)] ?? NaN;
-const mean = (list) => list.reduce((s, v) => s + v, 0) / list.length;
-const subtract = (a, b) => a.map((v, i) => v - b[i]);
 
 function bend(a, b, c) {
   const [u, v] = [subtract(b, a), subtract(c, b)];
@@ -51,18 +49,7 @@ for (let t = 0; t < count; t += 1) {
 }
 
 // --- Camera projection, with the sequence's own calibration.
-const pick = JSON.parse(readFileSync(join(folder, "pick.json"), "utf8"));
-const calibration = JSON.parse(readFileSync(join(folder, "calibration.json"), "utf8"));
-const camera = calibration.cameras.find((c) => c.type === "hd" && c.name === (process.env.CAMERA ?? pick.camera));
-const project = (p) => {
-  const c = camera.R.map((row, i) => row[0] * p[0] + row[1] * p[1] + row[2] * p[2] + camera.t[i][0]);
-  const [x, y] = [c[0] / c[2], c[1] / c[2]];
-  const r2 = x * x + y * y;
-  const [k1, k2, p1, p2, k3] = camera.distCoef;
-  const radial = 1 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2;
-  const [xd, yd] = [x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x), y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y];
-  return [(camera.K[0][0] * xd + camera.K[0][1] * yd + camera.K[0][2]) * scale, (camera.K[1][1] * yd + camera.K[1][2]) * scale];
-};
+const project = cameraProjector(folder, scale);
 
 // --- Similarity alignment of 21 points, the standard PA step, by a Jacobi eigen solve of the 4x4 Horn matrix.
 function procrustesError(source, target) {
@@ -97,19 +84,6 @@ function procrustesError(source, target) {
   return mean(rotated.map((p, n) => Math.hypot(...p.map((v, k) => v * factor - b[n][k]))));
 }
 
-function correlation(a, b) {
-  const pairs = a.map((v, t) => [v, b[t]]).filter(([x, y]) => x !== null && x !== undefined && y !== null && y !== undefined);
-  if (pairs.length < 10) return NaN;
-  const [mx, my] = [0, 1].map((k) => mean(pairs.map((p) => p[k])));
-  const cov = pairs.reduce((s, [x, y]) => s + (x - mx) * (y - my), 0);
-  const [vx, vy] = [0, 1].map((k) => Math.sqrt(pairs.reduce((s, p) => s + (p[k] - [mx, my][k]) ** 2, 0)));
-  return vx && vy ? cov / (vx * vy) : NaN;
-}
-const spread = (list) => {
-  const known = list.filter((v) => v !== null && v !== undefined);
-  const m = mean(known);
-  return Math.sqrt(mean(known.map((v) => (v - m) ** 2)));
-};
 
 // --- SAM 3D Body: forward kinematics from BVH, chains ordered pinky to thumb, last four joints of each are the four points.
 function readBvh(path) {
