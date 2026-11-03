@@ -9,6 +9,17 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-03, facts checked for the five open decisions, no card used
+
+- py-soma-x's `rotvec_to_matrix` is still wrong on SOMA-X main (read today, after 0.3.4 on 2026-10-09 and 0.3.5 on 2026-11-02). Re-measured against SciPy: 90° about Z gives determinant 0.759 and a nearest rotation of 47° (the research file said 51°, now corrected); (0.3, -0.2, 0.5) gives determinant 1.146; a 5e-7 rad turn gives determinant 2.0, so the small-angle branch is wrong too. Nothing in SOMA or GEM-X calls it. The repo's issues and PRs don't mention it (GitHub searches `rotvec`, and `rodrigues OR rotation OR transforms`).
+- Open SOMA-X PR #21: PoseInversion's Lie-GN refinement drifts off true rotations, worst at fingertips. `join_fingers.py` runs the default, `lie_iters=3`. Whether this costs finger movement is untested.
+- Frame rates: GEM-X resamples every clip to 30 fps (`gem/inference/video.py:142`). The SAM 3D Body step reads the source frames (`run_full.js:26`), and the join stops when the frame counts differ (`join_fingers.py:107`). So a 60 fps or 29.97 fps phone clip fails `mocap.js` as it stands.
+- ComfyUI's `LoadVideo` decodes the whole clip into memory as one IMAGE tensor. At 32-bit floats (ComfyUI's IMAGE type, inferred, not measured here) that is about 7.5 GB for 10 s of 1080p and about 30 GB for 10 s of 4K.
+- QuickMagic's own recording guide, from our notes (`live-and-apps.md:265`): 720p or higher, a flat camera angle because elevated views make motion lean, one continuous shot, steady subject size, small hands lose accuracy.
+- Retargeting: JustStage's standards give it to its importer, `import.characterise` with a per-source profile (`E:\Dev\3D\just-stage\docs\standards\README.md:94`, `skeleton-and-face.md` §1.5). JustDirect's test bodies use MPFB2's UE-named `rig.game_engine.json` (`E:\Dev\Web\test-just-direct\mhbody.py:19`). SOMA's `LeftLeg` is the thigh and `LeftShin` the shin, while HumanIK's `LeftLeg` is the shin, so a name-guessing retargeter would put thighs on shins.
+- Kimodo MotionCorrection is on disk as source in RGB MoCap's clone (`rgbmocap/third_party/KimodoMotionCorrection`, upstream commit e1c219c, patched for SMPL-X). Its prebuilt module is for Python 3.10, and GEM-X's venv is 3.12.9. Visual Studio Community 2026 is installed on E:; its C++ workload is unchecked.
+- C: leftovers: `%LOCALAPPDATA%\NVIDIA\warp` holds 3.17 MB, 18 SOMA kernel files written 2026-10-31 (card) and 2026-11-02 (CPU), two separate times a run missed `WARP_CACHE_PATH`. No other cache of ours on C: since 2026-10-31. The user-level variables already point `UV_CACHE_DIR` at E:.
+
 ### 2026-11-02, export to BVH, FBX and face CSV, `bench/export_mocap.py` and `bench/mocap.js`, research section 14
 
 Clip 2338. The BVH (77 SOMA joints, cm, Y up) read back matches the posed skeleton to 0.001 mm; the BVH and the FBX, imported back into Blender 5.3, match to 0.002 mm. The FBX keys start at time 0, like the video. Face curves go out in Live Link Face's CSV layout. Drawn on the video, the body sits on the person and the hand shapes match by eye.
