@@ -2,7 +2,10 @@
 // curves, then BVH, FBX (through Blender), Live Link Face CSV, import checks and a preview drawn on the video.
 // Each step is skipped when its output is already there, so a stopped run continues. GEM-X and SAM 3D Body use the
 // graphics card, which is shared: message the other sessions first. ComfyUI must already be running on port 8199 with
-// --extra-model-paths-config bench/comfy_paths.yaml (see run_full.js).
+// --output-directory out and --extra-model-paths-config bench/comfy_paths.yaml (see run_full.js).
+// Every step reads one 30 fps copy of the clip, made by GEM-X's own converter, because GEM-X works at 30 fps and the
+// finger join needs the same frames from both models; a 60 or 29.97 fps phone clip would otherwise not line up.
+// SAM 3D Body runs in pieces sized to the frame: ComfyUI decodes a video into 32-bit floats, about 30 GB for 10 s of 4K.
 // Run: node mocap.js <clip in in/> [finger smoothing none|default|strong]
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
@@ -15,10 +18,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const [clip, smoothing = "default"] = process.argv.slice(2);
 if (!clip) throw new Error("usage: node mocap.js <clip in in/> [none|default|strong]");
 const name = clip.replace(/\.[^.]+$/, "");
-const video = join(root, "in", clip);
+const source = join(root, "in", clip);
 const take = join(root, "out", "take", name);
-mkdirSync(take, { recursive: true });
+mkdirSync(join(take, "sam"), { recursive: true });
 const at = (file) => join(take, file);
+const video = at("clip30.mp4");
 
 const gemx = join(root, "gemx", "GEM-X");
 const gemxPython = join(root, "gemx", ".venv", "Scripts", "python.exe");
@@ -27,6 +31,8 @@ const toolsPython = "E:/Dev/3D/just-stage/.dev/venv-tools/Scripts/python.exe"; /
 const blender = "E:/blender-5.3.0-beta/blender.exe";
 const cache = join(root, "gemx", "cache");
 const env = { ...process.env, WARP_CACHE_PATH: join(cache, "warp"), HF_HOME: join(cache, "hf"), TMP: join(cache, "tmp"), TEMP: join(cache, "tmp") };
+// Decoded frames per SAM 3D Body piece, in GB of 32-bit floats; the rest of RAM is left for the models and other sessions.
+const PIECE_GB = 6;
 
 async function step(label, output, file, args, cwd = root) {
   if (output && existsSync(output)) return console.log(`${label}: already there`);
@@ -39,20 +45,40 @@ async function step(label, output, file, args, cwd = root) {
     console.error(`${label} failed:\n${String(error.stderr ?? error).split(/\r?\n/).slice(-15).join("\n")}`);
     process.exit(1);
   }
+  if (output && !existsSync(output)) {
+    console.error(`${label} finished without writing ${output}`);
+    process.exit(1);
+  }
 }
-
-const { stdout: probe } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video]);
-const seconds = Math.ceil(Number(probe.trim()));
 const bench = (file) => join(root, "bench", file);
 
+const normalize = "import sys; from gem.inference.video import normalize_video; m = normalize_video(sys.argv[1], sys.argv[2])['normalized']; print(f\"{m['frame_count']} frames at {m['fps']:g} fps, {m['width']}x{m['height']}\")";
+await step("30 fps copy", video, gemxPython, ["-c", normalize, source, video], gemx);
+const { stdout: probe } = await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries", "stream=width,height,nb_read_packets", "-of", "csv=p=0", video]);
+const [width, height, frames] = probe.trim().split(",").map(Number);
+
 console.log("GEM-X and SAM 3D Body use the graphics card.");
-await step("GEM-X body", at("gem.pt"), gemInfer, ["motion-video", "--task", "body", "--input", video, "--config", "weights/body_video_native77_static.yaml", "--start", "0", "--duration", String(seconds), "--device", "cuda", "--postprocess", "--soma-assets", "assets/soma", "--output", at("gem.pt")], gemx);
-const mesh = join(root, "out", "mocap", `${name}-b8-mhr.npz`);
+await step("GEM-X body", at("gem.pt"), gemInfer, ["motion-video", "--task", "body", "--input", video, "--config", "weights/body_video_native77_static.yaml", "--device", "cuda", "--postprocess", "--soma-assets", "assets/soma", "--output", at("gem.pt")], gemx);
+
+const mesh = at("sam-mhr.npz");
 if (!existsSync(mesh)) {
   const up = await fetch("http://127.0.0.1:8199/system_stats").then((r) => r.ok, () => false);
   if (!up) throw new Error("ComfyUI is not running on port 8199; start it as run_full.js describes, then run this again");
+  const perPiece = Math.max(30, Math.floor((PIECE_GB * 2 ** 30) / (width * height * 3 * 4)));
+  const pieces = [];
+  for (let first = 0, i = 0; first < frames; first += perPiece, i++) {
+    const last = Math.min(frames, first + perPiece);
+    const tag = `p${String(i).padStart(2, "0")}`;
+    const piece = join(take, "sam", `${tag}.mp4`);
+    // Lossless, so SAM 3D Body sees exactly the 30 fps copy's frames.
+    await step(`piece ${tag}, frames ${first}-${last - 1}`, piece, "ffmpeg", ["-v", "error", "-nostdin", "-y", "-i", video, "-vf", `trim=start_frame=${first}:end_frame=${last},setpts=PTS-STARTPTS`, "-c:v", "libx264", "-qp", "0", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-an", piece]);
+    // ComfyUI reads it from its output folder (the "[output]" annotation) and saves under out/mocap/<same path>.
+    const saved = join(root, "out", "mocap", "take", name, "sam", `${tag}-b8-mhr.npz`);
+    await step(`SAM 3D Body ${tag}`, saved, process.execPath, [bench("run_full.js"), `take/${name}/sam/${tag}.mp4 [output]`, "8", "1", "0", "1"], join(root, "bench"));
+    pieces.push(saved);
+  }
+  await step("join SAM 3D Body pieces", mesh, gemxPython, [bench("concat_mhr.py"), mesh, String(frames), ...pieces]);
 }
-await step("SAM 3D Body", mesh, process.execPath, [bench("run_full.js"), clip, "8", "1", "0", "1"], join(root, "bench"));
 await step("head points", at("head2d.json"), gemxPython, [bench("gem_head2d.py"), at("gem.pt"), at("head2d.json")], gemx);
 await step("face", at("face.json"), toolsPython, [bench("mp_face.py"), video, join(root, "models", "face_landmarker.task"), at("head2d.json"), at("face.json")]);
 await step("join fingers", at("join.npz"), gemxPython, [bench("join_fingers.py"), at("gem.pt"), mesh, at("join.json"), "1", "-", "frame", smoothing], gemx);

@@ -9,6 +9,30 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-03, Kimodo foot cleanup and PoseInversion refinement, measured, no card used
+
+Kimodo MotionCorrection, upstream (github.com/nv-tlabs/kimodo, commit e1c219c, Apache-2.0), built for Python 3.12 with Visual Studio 2026 in 76 s into `tmp/kimodo-mc` (`pip install --no-deps --no-build-isolation --target`, `CMAKE_GENERATOR="Visual Studio 18 2026"`). `bench/kimodo_feet.py` runs it on the exported BVH (GEM-X's contact-IK body) with GEM-X's own foot contacts. Scored by `truth_body.js`, before then after:
+
+| Walk | Pose, mm | Motion, mm | Accel error | Hip path, mm | Foot slide, mm (real) | Floor spread, mm (real) |
+|---|---|---|---|---|---|---|
+| 4648 | 26.2 → 28.3 | 79.2 → 81.9 | 7.20 → 7.27 | 70.8 → 70.7 | 3.1 → 1.3 (4.6) | 50.9 → 47.8 (24.2) |
+| 13858 | 37.1 → 38.3 | 83.4 → 84.5 | 9.38 → 9.30 | 69.8 → 70.1 | 3.3 → 0.8 (3.4) | 60.1 → 58.6 (30.2) |
+
+Not kept. The floor spread drops only 3-6% and stays about twice the real one, pose and motion get 1-3 mm worse, and foot slide falls below the measured data's own (which includes the heel rolling). Why the floor barely moves: Kimodo lifts a planted foot that sinks below its rest height, but leaves one that floats above it (`Utility.cpp:186`, `std::max(framePt.GetY(), minHeight)`). The "before" scores repeat section 12's exactly, so the BVH round trip is clean.
+
+PoseInversion with `lie_iters` 0 against the default 3 (SOMA-X PR #21), default finger smoothing, left hand then right:
+
+| Clip | Steps | Shape, mm | Bend error, deg | Follows | Shown |
+|---|---|---|---|---|---|
+| 2338 | 3 (default) | 8.0, 7.8 | 8.2, 7.4 | 0.95, 0.95 | 86%, 85% |
+| 2338 | 0 | 8.1, 8.1 | 8.7, 8.1 | 0.95, 0.95 | 89%, 91% |
+| 20728 | 3 (default) | 9.1, 8.8 | 10.9, 10.0 | 0.94, 0.90 | 85%, 78% |
+| 20728 | 0 | 9.4, 8.9 | 10.8, 10.2 | 0.92, 0.91 | 87%, 84% |
+
+Not kept: no refinement shows 2-6 points more of the movement but costs a little shape and bend accuracy, and the mesh fits worse (11.1 and 7.8 mm). The default stays.
+
+30 fps step: the Panoptic clips were already 29.97 fps (30000/1001); their 300 frames matched only because 10 s rounds to 300 either way. A 60 fps copy of clip 2338 (601 frames) and the 29.97 original both come out of GEM-X's converter at 300 frames.
+
 ### 2026-11-03, facts checked for the five open decisions, no card used
 
 - py-soma-x's `rotvec_to_matrix` is still wrong on SOMA-X main (read today, after 0.3.4 on 2026-10-09 and 0.3.5 on 2026-11-02). Re-measured against SciPy: 90° about Z gives determinant 0.759 and a nearest rotation of 47° (the research file said 51°, now corrected); (0.3, -0.2, 0.5) gives determinant 1.146; a 5e-7 rad turn gives determinant 2.0, so the small-angle branch is wrong too. Nothing in SOMA or GEM-X calls it. The repo's issues and PRs don't mention it (GitHub searches `rotvec`, and `rodrigues OR rotation OR transforms`).
