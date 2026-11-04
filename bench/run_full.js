@@ -2,7 +2,11 @@
 // sampled every 250 ms. Writes raw and smoothed BVH with the root path on, and an overlay to look at.
 // mesh 1 also saves the raw per-frame MHR mesh and parameters to an .npz; ComfyUI must be started with
 // --extra-model-paths-config bench/comfy_paths.yaml so the save node loads.
-// Run: node run_full.js <clip.mp4> <batch> [hands 1|0] [overlay 1|0] [mesh 1|0]
+// track 1 follows the person through the clip with SAM 3.1 video tracking, as ComfyUI's own SAM 3D Body template
+// (utility_sam3d_body.json: "For multiple people in same clip SAM3 is practically required"). It needs
+// sam3.1_multiplex_fp16.safetensors in ComfyUI's models/checkpoints. Track 0 is exported; without tracking, RT-DETR's
+// one box a frame can jump to another person.
+// Run: node run_full.js <clip.mp4> <batch> [hands 1|0] [overlay 1|0] [mesh 1|0] [track 1|0]
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
@@ -10,8 +14,8 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const base = "127.0.0.1:8199";
-const [file, batch, hands = "1", overlay = "1", mesh = "0"] = process.argv.slice(2);
-const tag = `${file.replace(/\.[^.]+$/, "")}-b${batch}${hands === "1" ? "" : "-body"}`;
+const [file, batch, hands = "1", overlay = "1", mesh = "0", track = "0"] = process.argv.slice(2);
+const tag = `${file.replace(/\.[^.]+$/, "")}-b${batch}${hands === "1" ? "" : "-body"}${track === "1" ? "-track" : ""}`;
 
 await fetch(`http://${base}/free`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ unload_models: true, free_memory: true }) });
 await new Promise((done) => setTimeout(done, 4000));
@@ -55,7 +59,15 @@ if (overlay === "1") {
   prompt[14] = { class_type: "SaveImage", inputs: { images: ["13", 0], filename_prefix: `mocap/${tag}/f` } };
 }
 if (mesh === "1") prompt[15] = { class_type: "JustMocapSaveMHR", inputs: { mhr_pose_data: ["7", 0], filename_prefix: `mocap/${tag}-mhr` } };
-const names = { 1: "load", 3: "decode", 4: "detector load", 5: "detect", 6: "sam load", 7: "predict", 8: "smooth", 9: "bvh raw", 11: "bvh smooth", 13: "render", 14: "save images" };
+if (track === "1") {
+  // The template's wiring and settings: SAM 3.1 with the prompt "person", RT-DETR at up to 100 boxes, both into Predict.
+  prompt[16] = { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "sam3.1_multiplex_fp16.safetensors" } };
+  prompt[17] = { class_type: "CLIPTextEncode", inputs: { clip: ["16", 1], text: "person" } };
+  prompt[18] = { class_type: "SAM3_VideoTrack", inputs: { images: ["3", 0], model: ["16", 0], conditioning: ["17", 0], detection_threshold: 0.5, max_objects: 4, detect_interval: 1 } };
+  prompt[5].inputs.max_detections = 100;
+  prompt[7].inputs.track_data = ["18", 0];
+}
+const names = { 1: "load", 3: "decode", 4: "detector load", 5: "detect", 6: "sam load", 7: "predict", 8: "smooth", 9: "bvh raw", 11: "bvh smooth", 13: "render", 14: "save images", 16: "sam3 load", 18: "track" };
 
 const clientId = randomUUID();
 const socket = new WebSocket(`ws://${base}/ws?clientId=${clientId}`);
