@@ -11,7 +11,37 @@ Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
 ### 2026-11-04, PoseInversion autograd refinement, moving camera and lens, in progress
 
-**The GEM-X drift issue was not posted.** Claude Code's permission check denied `gh issue create` as a public action. Its numbers also need redoing on the calibrated lens run below, since every earlier run had the wrong focal length and a distorted image. Checked against the data, the draft's hip numbers were loose: the hip-height change from the contact step, first to last half-second, is -14 and -23 cm, with a range of 23 and 26 cm (hip midpoint y in `pred_soma_params_global` minus `raw_predictions`; it equals the `transl` change, since `correct_static_pose` only replaces `body_pose`). The earlier "drops 20 cm and 24 cm" read 10 samples. No new GEM-X issue: the 28 titles are the same as on 2026-11-03.
+**The GEM-X drift issue was not posted.** Claude Code's permission check denied `gh issue create` as a public action. No new GEM-X issue covers it: the 28 titles are the same as on 2026-11-03.
+
+Checked against the data, the first draft's hip numbers were loose ("drops 20 cm and 24 cm" read 10 samples). The measure is the hip midpoint's y in `pred_soma_params_global` minus `raw_predictions`. It equals the `transl` change, since `correct_static_pose` only replaces `body_pose`.
+
+The text below replaces the 2026-11-03 draft. It uses all six runs below, including the calibrated lens, since every earlier run had the wrong focal length and a distorted image. Title: "Contact post-process sums vertical joint motion into the root: planted feet drift up to 30 cm over 10 s".
+
+```markdown
+With `--postprocess`, `correct_static_translation` (gem/motion/postprocess/contact.py:157-166) rebuilds the root path as the running sum of root displacement minus the contact-weighted displacement of the static-flagged joints, in all three axes. Then x and z are smoothed, and y gets a single `ground_y` offset for the whole clip. So any vertical motion of a joint flagged static (heel roll, toe-off, prediction noise) adds up in the root height and is never pulled back.
+
+Measured on CMU Panoptic `171204_pose1`, HD camera 00_07, two 10 s walks (frames 4648-4947 and 13858-14157), commit 20555be (`contact.py` is unchanged on main, 4aef145). Three inputs per walk:
+- the original 1080p video with the default intrinsics;
+- the same video undistorted with Panoptic's calibration, with the calibrated `camera.intrinsics`;
+- a 1280x720 virtual camera turning up to 13° to follow the person, drawn from the calibrated view by a rotation homography, with `camera.mode: background`.
+
+Range of planted ankle heights in the world output, mm. These are the stances where the measured ankle sits at its planted height, with no alignment:
+
+| Walk, input | Measured | No post-process | Post-process | Post-process keeping the raw y |
+|---|---|---|---|---|
+| 4648, original | 17 | 199 | 302 | 201 |
+| 4648, calibrated | 17 | 271 | 299 | 272 |
+| 4648, turning camera | 17 | 163 | 288 | 165 |
+| 13858, original | 31 | 94 | 289 | 95 |
+| 13858, calibrated | 31 | 162 | 287 | 161 |
+| 13858, turning camera | 31 | 72 | 259 | 73 |
+
+The hip-height change from the post-process (post minus raw), first to last half-second: -14, -4, -17, -23, -18 and -21 cm.
+
+"Keeping the raw y" takes `correct_static_translation`'s x and z, keeps the raw root height (lowered once so the lowest joint sits at 0), then runs `correct_static_pose` unchanged. It brings the floor range back to the raw one in every run. Foot slide under contact stays at 3.0-3.7 mm (3.0-3.6 with the current post-process), and pose error is unchanged.
+
+Suggested fix: keep the raw vertical root motion in `correct_static_translation`, or re-anchor y per stance to one ground height. The raw height itself still varies 7-27 cm across these walks, so a per-stance ground would do more. Related: #9.
+```
 
 **PoseInversion autograd FK on per-frame shapes fails in py-soma-x 0.3.3**, in two ways:
 - Its own chunking (`batch_size=16`) slices the bind cache but not the skinning layer: `ValueError: Incompatible batches: rotations=16, bind=300` (`batched_skinning.py:504`, from `_fit_autograd_public_layer`).
@@ -40,6 +70,28 @@ So the documented 10 steps make the fit worse; 200 improve it. The full-clip fin
 - a 1280×720 virtual camera at the same focal length, turning about its centre to follow the tracked person with a 0.35 s operator lag, plus a handheld wobble (pitch ±1.5°, roll ±1°, yaw jitter 0.3°). It is drawn from the source by an exact rotation homography with the lens model, with no black borders: frames are pulled in when the view would leave the source. The pan spans yaw -12.8 to 13.5° and pitch -6 to 7° on both walks.
 
 A sliding crop wasn't used, because the background estimator takes the polar factor of K⁻¹HK, and a pure image shift comes out as only about half the turn. The true rotations are saved for GEM-X's `provided` mode. GEM-X then runs `static` with intrinsics on the undistorted video, and `background` with intrinsics on the pan (`weights/body_video_native77_static_hd0007.yaml`, `weights/body_video_native77_background_pan.yaml`; `tmp/gem_pancam.ps1`, scoring `tmp/score_pancam.ps1`).
+
+**Results** (`truth_body.js`, GEM-X world; each run against the same measured joints):
+
+| Walk, input | Pose, mm | Motion, mm | Accel | Hip path, mm | Hip travel, mm (real) | Foot slide, mm | Own floor range, mm: raw, exported, raw y kept |
+|---|---|---|---|---|---|---|---|
+| 4648, original (distorted, diagonal focal) | 26.2 | 79.2 | 7.20 | 70.8 | 2631 (2464) | 3.1 | 199, 302, 201 |
+| 4648, undistorted, calibrated intrinsics | 28.5 | 72.0 | 7.57 | 62.4 | 2601 | 3.0 | 271, 299, 272 |
+| 4648, turning camera, `background` | 26.9 | 78.6 | 7.46 | 71.7 | 2507 | 3.1 | 163, 288, 165 |
+| 13858, original | 37.1 | 83.4 | 9.38 | 69.8 | 2617 (2498) | 3.3 | 94, 289, 95 |
+| 13858, undistorted, calibrated | 38.5 | 73.8 | 9.01 | 62.2 | 2619 | 3.0 | 162, 287, 161 |
+| 13858, turning camera, `background` | 36.4 | 85.2 | 11.07 | 77.5 | 2521 | 3.6 | 72, 259, 73 |
+
+Measured floor range: 17 mm (4648), 31 mm (13858). Each GEM-X run took 302-357 s, with the CPU test running beside it.
+
+- **Moving camera works.** With the background rotation estimate on a turning, wobbling camera, every frame from 0 to 299 was accepted (no skipped samples). The exported motion is within 1 mm of the static original on pose, and within 1-8 mm on motion and hip path. Its hip travel is the closest to the real one (2507 and 2521 mm, against real 2464 and 2498). Accel is 1.7 worse on 13858. ViPE isn't needed for camera turns. Camera translation (walking with the phone) is still untested: the GEM-X maintainer says ViPE's translation isn't used by the model either.
+- **Calibrated lens.** World motion and hip path improve by 7-10 mm, and the camera-space path improves a lot (motion 54 against 182 mm, 70 against 194). Pose gets 1.4-2.3 mm worse. The floor is unchanged after contact IK (299 and 287 mm). So the drift isn't caused by the wrong lens.
+- **The drift comes from GEM-X's contact step in all six runs.** Exported floor ranges are 259-302 mm, against 72-271 without the step. The hip-height change from the step (post minus raw), first to last half-second: 4648 -14.2, -4.0, -16.7 cm; 13858 -23.4, -18.4, -20.9 cm (ranges 13.5-26.2 cm).
+- **"Raw y kept"** (`bench/keep_raw_y.py`, a measurement of the issue's suggested fix, like `kimodo_feet.py`; not in `mocap.js`) takes `correct_static_translation`'s x and z, keeps the raw root height lowered once so the lowest joint sits at 0, then runs GEM-X's `correct_static_pose` unchanged. Its re-run of GEM-X's own post-process first matches the saved result (transl within 4e-6 m, body_pose within 0.003 rad).
+  - The floor range falls back to the raw one in all six runs.
+  - Foot slide stays at 3.0-3.7 mm and pose is unchanged.
+  - Motion is 2-10 mm worse.
+  - GEM-X's raw height still drifts 72-272 mm, so a fix needs one floor height per stance, not only the raw y.
 
 **Floor fix, existing methods, searched 2026-11-04.** Queries:
 1. "fix vertical drift ground world-grounded human motion from video foot contact post-processing": WHAM (arXiv 2312.07531, a learned trajectory refiner inside WHAM, not standalone), HTD-Refine (arXiv 2605.26879), Zou & Huang WACV 2020 (contact detector plus optimisation), ProxyCap.
@@ -79,7 +131,7 @@ GEM-X's post-process is `correct_static_translation` then `correct_static_pose` 
 
 SOMA PoseInversion's one documented mode not yet tried on the fingers: autograd FK refinement after the default solve (`autograd_iters`, with `autograd_leaf_weight` for the hands only; `pose_inversion.py:1369-1440`). On clip 2338 the conversion alone ("SAM in SOMA") already has a lower bend error than SAM 3D Body alone (8.5, 7.5° against 9.5, 8.5°) while showing less movement (86, 85% against 97, 96%).
 
-Drafted issue for NVlabs/GEM-X, not posted: "Contact post-process sums vertical joint motion into the root: planted feet drift about 30 cm over 10 s. `correct_static_translation` (gem/motion/postprocess/contact.py:157-166) rebuilds the root path as the running sum of root displacement minus contact-weighted joint displacement in all three axes, smooths x and z only, then subtracts one ground_y for the whole clip, so vertical slips of joints flagged static add up in the root height. CMU Panoptic 171204_pose1, HD camera 00_07, 1080p, frames 4648-4947 and 13858-14157, static camera, body_video_native77_static.yaml, --postprocess, commit 20555be (contact.py unchanged on main 4aef145): the root height after the step minus before drops 20 cm and 24 cm over 10 s; planted ankle heights in the world output span 302 and 289 mm over stances where the measured ankle is at its planted height (measured data 17 and 31 mm; without post-processing 199 and 94 mm). A per-stance ground height for y, or keeping the raw y, would avoid the accumulation."
+Drafted issue for NVlabs/GEM-X, not posted (superseded by the 2026-11-04 text above): "Contact post-process sums vertical joint motion into the root: planted feet drift about 30 cm over 10 s. `correct_static_translation` (gem/motion/postprocess/contact.py:157-166) rebuilds the root path as the running sum of root displacement minus contact-weighted joint displacement in all three axes, smooths x and z only, then subtracts one ground_y for the whole clip, so vertical slips of joints flagged static add up in the root height. CMU Panoptic 171204_pose1, HD camera 00_07, 1080p, frames 4648-4947 and 13858-14157, static camera, body_video_native77_static.yaml, --postprocess, commit 20555be (contact.py unchanged on main 4aef145): the root height after the step minus before drops 20 cm and 24 cm over 10 s; planted ankle heights in the world output span 302 and 289 mm over stances where the measured ankle is at its planted height (measured data 17 and 31 mm; without post-processing 199 and 94 mm). A per-stance ground height for y, or keeping the raw y, would avoid the accumulation."
 
 ### 2026-11-03, wrist orientation, the runner's card test and the finger resolution limit
 
