@@ -9,7 +9,7 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
-### 2026-11-04, PoseInversion autograd refinement, moving camera and lens, in progress
+### 2026-11-04, PoseInversion autograd refinement, moving camera and lens
 
 **The GEM-X drift issue was not posted.** Claude Code's permission check denied `gh issue create` as a public action. No new GEM-X issue covers it: the 28 titles are the same as on 2026-11-03.
 
@@ -61,7 +61,22 @@ Mesh fit error on clip 2338's first 16 frames, mean (median), mm:
 | Autograd 200, lr 5e-3 | 8.11 (4.99) | 16.9 s |
 | Autograd 200, lr 1e-3 | 8.11 (4.97) | 16.0 s |
 
-So the documented 10 steps make the fit worse; 200 improve it. The full-clip finger test runs 200 steps at lr 1e-3, plain and with `autograd_leaf_weight {"hands": 3}`, against a per-chunk baseline with 0 steps (`tmp/join_autograd.ps1`).
+So the documented 10 steps make the fit worse, and 200 improve it. The full-clip test (`tmp/join_autograd.ps1`, CPU, 4 threads) ran 200 steps at lr 1e-3, plain and with `autograd_leaf_weight {"hands": 3}`, against a per-chunk baseline with 0 steps. Scores are left hand then right, for SAM in SOMA (the conversion alone) and for the join:
+
+| Clip | Fit | Mesh error, mm | Time | Conversion: shape, mm / bend, deg / shown | Join: shape / bend / shown |
+|---|---|---|---|---|---|
+| 2338 | default (`mocap.js`) | 9.7 | | 7.9, 7.3 / 8.5, 7.5 / 86%, 85% | 8.0, 7.8 / 8.2, 7.4 / 86%, 85% |
+| 2338 | per-chunk, 0 steps | 9.7 | 150 s | same to 0.01 | same |
+| 2338 | 200 steps | 9.0 | 436 s | 7.8, 7.2 / 8.5, 7.8 / 86%, 85% | 7.9, 7.8 / 8.2, 7.7 / 86%, 85% |
+| 2338 | 200 steps, hands ×3 | 9.0 | 551 s | 7.9, 7.2 / 8.8, 7.4 / 84%, 83% | 8.0, 7.6 / 8.5, 7.3 / 84%, 83% |
+| 20728 | default | 6.9 | | 8.7, 8.7 / 11.1, 10.0 / 85%, 78% | 9.1, 8.8 / 10.9, 10.0 / 85%, 78% |
+| 20728 | per-chunk, 0 steps | 6.9 | 224 s | same | same |
+| 20728 | 200 steps | 6.7 | 556 s | 8.7, 8.6 / 10.6, 10.2 / 84%, 78% | 9.0, 8.8 / 10.4, 10.1 / 84%, 78% |
+| 20728 | 200 steps, hands ×3 | 6.7 | 451 s | 8.7, 8.6 / 10.5, 10.4 / 82%, 77% | 9.0, 8.8 / 10.3, 10.4 / 82%, 77% |
+
+Not kept. The mesh fits better (9.7 to 9.0 mm, 6.9 to 6.7), but no more of the finger movement shows, and weighting the hands lowers it by 1-3 points. Bend error moves ±0.5° either way. With this, every documented PoseInversion mode is tested: default, no refinement (`lie_iters` 0), and autograd at 10 and 200 steps with and without hand weight. The 11-point loss from SAM 3D Body alone (97, 96%) to the conversion (86, 85%) isn't a fitting error. A tighter fit doesn't bring it back, so it more likely comes from SOMA's finger joints sitting differently in the hand mesh than MHR's. That's unmeasured.
+
+The SOMA failures above could go to SOMA-X as an issue (autograd FK with per-frame identities and `batch_size`); not drafted or posted.
 
 **Lens.** Panoptic HD camera 00_07's calibrated focal length is 1395.7/1392.3 px, with strong barrel distortion (k1 -0.286, k2 0.182, k3 -0.048). GEM-X's motion step, given no intrinsics, assumes the image diagonal, 2203 px (`body_video.py:65`), and it doesn't undistort. So every Panoptic run so far had a focal length 58% too long and a distorted image. GEM-X's config takes `camera.intrinsics` (docs/DEMO.md, "Choose camera rotation handling").
 
@@ -92,6 +107,12 @@ Measured floor range: 17 mm (4648), 31 mm (13858). Each GEM-X run took 302-357 s
   - Foot slide stays at 3.0-3.7 mm and pose is unchanged.
   - Motion is 2-10 mm worse.
   - GEM-X's raw height still drifts 72-272 mm, so a fix needs one floor height per stance, not only the raw y.
+
+**Lens for a user's clip, searched 2026-11-04.** Panoptic 00_07's 1395.7 px on a 2203 px diagonal is a 27 mm equivalent (by diagonal, 43.27 mm full frame), about a phone's main camera. GEM-X's default, focal = diagonal, is 43 mm, so a phone clip also gets too long a focal length. Queries:
+1. "iPhone video metadata focal length 35mm equivalent exiftool QuickTime camera lens": Apple's AVFoundation documents a track-level QuickTime key `com.apple.quicktime.camera.focal_length.35mm_equivalent`, a string such as "50.00mm", from iOS 26.0, beside a lens model tag. ExifTool reads it as the "VideoKeys" group from 13.13; user reports say older iPhone .mov files carry no lens data.
+2. "estimate camera focal length from single image open source GeoCalib MoGe-2 field of view accuracy": [GeoCalib](https://github.com/cvg/GeoCalib) (ETH Zurich, ECCV 2024, Apache-2.0, pushed 2026-10-29) estimates focal length and gravity from one image, with uncertainty. MoGe-2 (arXiv 2507.02546) gets the field of view as a by-product of its point map.
+
+Neither is wired in or measured here.
 
 **Floor fix, existing methods, searched 2026-11-04.** Queries:
 1. "fix vertical drift ground world-grounded human motion from video foot contact post-processing": WHAM (arXiv 2312.07531, a learned trajectory refiner inside WHAM, not standalone), HTD-Refine (arXiv 2605.26879), Zou & Huang WACV 2020 (contact detector plus optimisation), ProxyCap.
