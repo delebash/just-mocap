@@ -103,7 +103,17 @@ Measured floor range: 17 mm (4648), 31 mm (13858). Each GEM-X run took 302-357 s
   - Against the original static run: within 1 mm on pose, within 2 mm on motion, and 1-8 mm on hip path. That comparison mixes lenses, though: the pan has the calibrated pinhole lens, the original the distorted image with the diagonal focal.
   - Against the static run with the same calibrated lens (like for like): motion is 6.6 and 11.4 mm worse, hip path 9.3 and 15.3 mm worse, accel 0.1 better and 2.1 worse; pose is 1.6 and 2.1 mm better.
 
-  Whether the cost is the rotation estimate's error or the smaller 1280×720 view is unmeasured: GEM-X's `provided` mode with the saved true rotations would split the two (about 12 min of card for both walks). ViPE isn't needed to handle camera turns at all. Camera translation (walking with the phone) is still untested: the GEM-X maintainer says ViPE's translation isn't used by the model either.
+  The control run splits the cost: GEM-X's `provided` mode on the same video with the saved true rotations (`weights/body_video_native77_provided_pan<id>.yaml`, `tmp/gem_provided.ps1`, 290 and 267 s).
+
+  | Walk | Static, calibrated | Turning, true rotations | Turning, background estimate |
+  |---|---|---|---|
+  | 4648: motion / hip path / accel / pose | 72.0 / 62.4 / 7.57 / 28.5 | 72.1 / 65.1 / 7.34 / 26.9 | 78.6 / 71.7 / 7.46 / 26.9 |
+  | 13858 | 73.8 / 62.2 / 9.01 / 38.5 | 81.5 / 73.9 / 10.91 / 36.4 | 85.2 / 77.5 / 11.07 / 36.4 |
+
+  - The rotation estimate costs 6.5 and 3.7 mm on motion and 6.6 and 3.6 mm on hip path, against the true rotations. That is all a better estimator such as ViPE could win back.
+  - The rest is the turning, narrower view itself: 0.1 and 7.7 mm on motion.
+
+  So ViPE isn't needed to handle camera turns. Camera translation (walking with the phone) is still untested: the GEM-X maintainer says ViPE's translation isn't used by the model either.
 - **Calibrated lens.** World motion and hip path improve by 7-10 mm, and the camera-space path improves a lot (motion 54 against 182 mm, 70 against 194). Pose gets 1.4-2.3 mm worse. The floor is unchanged after contact IK (299 and 287 mm). So the drift isn't caused by the wrong lens.
 - **The drift comes from GEM-X's contact step in all six runs.** Exported floor ranges are 259-302 mm, against 72-271 without the step. The hip-height change from the step (post minus raw), first to last half-second: 4648 -14.2, -4.0, -16.7 cm; 13858 -23.4, -18.4, -20.9 cm (ranges 13.5-26.2 cm).
 - **"Raw y kept"** (`bench/keep_raw_y.py`, a measurement of the issue's suggested fix, like `kimodo_feet.py`; not in `mocap.js`) takes `correct_static_translation`'s x and z, keeps the raw root height lowered once so the lowest joint sits at 0, then runs GEM-X's `correct_static_pose` unchanged. Its re-run of GEM-X's own post-process first matches the saved result (transl within 4e-6 m, body_pose within 0.003 rad).
