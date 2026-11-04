@@ -9,6 +9,53 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-04, PoseInversion autograd refinement, moving camera and lens, in progress
+
+**The GEM-X drift issue was not posted.** Claude Code's permission check denied `gh issue create` as a public action. Its numbers also need redoing on the calibrated lens run below, since every earlier run had the wrong focal length and a distorted image. Checked against the data, the draft's hip numbers were loose: the hip-height change from the contact step, first to last half-second, is -14 and -23 cm, with a range of 23 and 26 cm (hip midpoint y in `pred_soma_params_global` minus `raw_predictions`; it equals the `transl` change, since `correct_static_pose` only replaces `body_pose`). The earlier "drops 20 cm and 24 cm" read 10 samples. No new GEM-X issue: the 28 titles are the same as on 2026-11-03.
+
+**PoseInversion autograd FK on per-frame shapes fails in py-soma-x 0.3.3**, in two ways:
+- Its own chunking (`batch_size=16`) slices the bind cache but not the skinning layer: `ValueError: Incompatible batches: rotations=16, bind=300` (`batched_skinning.py:504`, from `_fit_autograd_public_layer`).
+- An identity prepared with gradients on fails the second Adam step: "Trying to backward through the graph a second time".
+
+`join_fingers.py` now prepares each 16-frame chunk's identity itself, under `torch.no_grad()`, whenever the fit options name `autograd_iters`. Against SOMA's own chunking on the default fit (clip 2338, 32 frames), that changes rotations by at most 0.0067 (matrix element), translation by 0.03 mm and per-vertex error by 0.27 mm.
+
+Mesh fit error on clip 2338's first 16 frames, mean (median), mm:
+
+| Fit | Error | Time |
+|---|---|---|
+| Default | 8.71 (5.74) | 4.1 s |
+| Autograd 10 steps, lr 5e-3 (the documented example) | 10.61 (7.83) | 5.4 s |
+| Autograd 10, lr 1e-3 | 8.84 (6.02) | 5.3 s |
+| Autograd 50, lr 5e-3 | 8.63 (5.57) | 7.6 s |
+| Autograd 50, lr 1e-3 | 8.53 (5.52) | 7.2 s |
+| Autograd 200, lr 5e-3 | 8.11 (4.99) | 16.9 s |
+| Autograd 200, lr 1e-3 | 8.11 (4.97) | 16.0 s |
+
+So the documented 10 steps make the fit worse; 200 improve it. The full-clip finger test runs 200 steps at lr 1e-3, plain and with `autograd_leaf_weight {"hands": 3}`, against a per-chunk baseline with 0 steps (`tmp/join_autograd.ps1`).
+
+**Lens.** Panoptic HD camera 00_07's calibrated focal length is 1395.7/1392.3 px, with strong barrel distortion (k1 -0.286, k2 0.182, k3 -0.048). GEM-X's motion step, given no intrinsics, assumes the image diagonal, 2203 px (`body_video.py:65`), and it doesn't undistort. So every Panoptic run so far had a focal length 58% too long and a distorted image. GEM-X's config takes `camera.intrinsics` (docs/DEMO.md, "Choose camera rotation handling").
+
+**Moving camera.** GEM-X issue #24 (closed): its demo used to fall back silently to a static camera. In our version (20555be), `camera_motion.py` raises an error instead. The maintainer points to `--camera-mode vipe` on main. `bench/pan_camera.py` (new) makes two videos from each walk:
+- the full frame undistorted with its calibrated intrinsics;
+- a 1280×720 virtual camera at the same focal length, turning about its centre to follow the tracked person with a 0.35 s operator lag, plus a handheld wobble (pitch ±1.5°, roll ±1°, yaw jitter 0.3°). It is drawn from the source by an exact rotation homography with the lens model, with no black borders: frames are pulled in when the view would leave the source. The pan spans yaw -12.8 to 13.5° and pitch -6 to 7° on both walks.
+
+A sliding crop wasn't used, because the background estimator takes the polar factor of K⁻¹HK, and a pure image shift comes out as only about half the turn. The true rotations are saved for GEM-X's `provided` mode. GEM-X then runs `static` with intrinsics on the undistorted video, and `background` with intrinsics on the pan (`weights/body_video_native77_static_hd0007.yaml`, `weights/body_video_native77_background_pan.yaml`; `tmp/gem_pancam.ps1`, scoring `tmp/score_pancam.ps1`).
+
+**Floor fix, existing methods, searched 2026-11-04.** Queries:
+1. "fix vertical drift ground world-grounded human motion from video foot contact post-processing": WHAM (arXiv 2312.07531, a learned trajectory refiner inside WHAM, not standalone), HTD-Refine (arXiv 2605.26879), Zou & Huang WACV 2020 (contact detector plus optimisation), ProxyCap.
+2. "best open source foot contact cleanup mocap floor plant tool 2026": Foot Flow (a Blender add-on, May 2026, its author still testing, no replies), UnderPressure, Mocap Bone Lock (paid Blender add-on).
+3. "GVHMR WHAM TRAM foot sliding floor penetration ground plane refinement code": only WHAM.
+
+Read:
+- **[UnderPressure](https://github.com/InterDigitalInc/UnderPressure)** (InterDigital, SCA 2022; last commit 2023-05-14; Limited Software Evaluation License: research only, no commercial use, no modification). `footskate.py`'s `Cleaner` is a two-sided plant: for each contact range the foot's contact points (a foot-height offset below the ankle and toe joints) get a target at the contact's mid-frame x, y and at ground height z = 0. Adam then optimises all joint rotations and the root path together, against:
+  - the contact-position loss, eased in and out at the range ends;
+  - keeping the root velocity close to the original (weight 1e2);
+  - its own vGRF network's forces staying the same;
+  - a final Gaussian smoothing (size 15, std 3).
+
+  So it moves the root height as well as the legs. Its contacts come from its own pretrained vGRF network on its own 23-joint skeleton. The method is published, so it can be written in our code on SOMA's differentiable FK with GEM-X's contacts.
+- **[HTD-Refine](https://zju3dv.github.io/htd-refine)** (Wei, Shen, ..., Zhou; CVPR 2026; code at github.com/ant-research/HTD-Refine): it refines TRAM, GVHMR and Human3R with predicted velocities and accelerations, has no ground or contact term, and its foot skating gets worse on GVHMR/EMDB (4.0 to 5.7). Not a floor fix.
+
 ### 2026-11-03, the floor drifts 29-30 cm in GEM-X's own world, no card used
 
 Correction of the floor block below: its "not a slow drift or a tilt" was wrong. It rested on 4648's left stance from frame 124, which GEM-X itself marks as not planted (heel contact 0.03, toe 0.06: the real heel is up there), and on heights taken after `truth_body.js`'s one alignment per clip, which rotates and scales a drifting floor nearly flat.

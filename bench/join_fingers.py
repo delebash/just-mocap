@@ -82,8 +82,21 @@ if shape_mode == "frame":
     scales = torch.where(found[:, None], scales, scales[found].mean(0, keepdim=True))
 else:
     shape, scales = shape[found].mean(0, keepdim=True), scales[found].mean(0, keepdim=True)
-inversion.prepare_identity(shape, scales, repose_to_bind_pose=repose)
-result = inversion.fit(torch.nan_to_num(vertices), batch_size=16, **fit_options)
+if "autograd_iters" in fit_options and shape.shape[0] > 1:
+    # PoseInversion's autograd refinement fails on per-frame shapes in py-soma-x 0.3.3: its own chunking slices the
+    # bind cache but not the skinning layer ("Incompatible batches: rotations=16, bind=300", batched_skinning.py:504),
+    # and an identity prepared with gradients on fails the second backward pass. So each chunk's identity is prepared
+    # here, without gradients. Passing autograd_iters 0 takes this path too, as the baseline for a refined run.
+    parts = []
+    for start in range(0, len(vertices), 16):
+        end = start + 16
+        with torch.no_grad():
+            inversion.prepare_identity(shape[start:end], scales[start:end], repose_to_bind_pose=repose)
+        parts.append(inversion.fit(torch.nan_to_num(vertices[start:end]), **fit_options))
+    result = {key: torch.cat([part[key] for part in parts]) for key in parts[0]}
+else:
+    inversion.prepare_identity(shape, scales, repose_to_bind_pose=repose)
+    result = inversion.fit(torch.nan_to_num(vertices), batch_size=16, **fit_options)
 orient, parent_t = precompute_joint_orient(layer.get_reference_pose(version="0.2.0").to(result["rotations"]), layer.output_joint_parent_ids)
 relative = remove_joint_orient_local(result["rotations"], orient, parent_t)[:, 1:]  # drop the virtual Root: 77 joints, Hips first
 error_mm = result["per_vertex_error"][found].mean().item() * 1000
