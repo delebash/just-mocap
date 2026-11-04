@@ -144,7 +144,23 @@ The skeleton offsets differ from the 2026-11-02 file by up to 6 µm, from float 
 - ExpressionAppBridge (github.com/Guerra24/ExpressionAppBridge): a startup calibration saved to JSON.
 - ComfyUI's `SAM3DBody_FaceExpression` doc: MediaPipe's brow outputs run low (about 0.1-0.3) and it suggests a 2-3× gain.
 
-Already measured (section 13): MediaPipe's brow points follow the real brow at 0.88-0.97, its brow blendshapes at 0.74-0.82. Still unmeasured: the right size (gain) without an ARKit ruler, BrowInnerUp and BrowDown (the ruler measures mid-brow height only), and head turns.
+Already measured (section 13): MediaPipe's brow points follow the real brow at 0.88-0.97, its brow blendshapes at 0.74-0.82.
+
+Measured 2026-11-04 (`bench/brows_mf.js`, Multiface, the eight sequences, 428 frames, camera 400048). Each MediaPipe measure is correlated with the real mesh's, at full / 140 px / 70 px faces:
+
+| Brow | Our points (brow 105/334, inner 107/336, to the eye-corner midpoint, over the corner distance) | MeFaMo's distances (2D, over the corner distance) | MediaPipe blendshape |
+|---|---|---|---|
+| Right height | 0.97 / 0.96 / 0.94 | 0.90 / 0.90 / 0.91 | browOuterUpRight 0.81 / 0.82 / 0.82; browDownRight -0.67 / -0.66 / -0.68 |
+| Left height | 0.92 / 0.90 / 0.87 | 0.82 / 0.81 / 0.83 | browOuterUpLeft 0.74 / 0.73 / 0.73; browDownLeft -0.83 |
+| Right inner height | 0.92 | 0.91-0.92 (9 to 6) | browInnerUp 0.80 |
+| Left inner height | 0.93 | 0.86-0.87 | browInnerUp 0.74 |
+
+Eyelid leak, as correlation with the real eye opening:
+- the real brow: 0.35 right, 0.10 left (these posed sequences move brows and lids together);
+- our points: 0.43-0.49 right, 0.21-0.30 left;
+- MeFaMo's: 0.28-0.29 right, about 0 left.
+
+So MeFaMo's measure, taken from the upper lid crease (27/257), drops the lids but follows the brow less well. Our points follow best at every size, with a small lid leak. Caveats: one person, posed, a front camera, in 2D; head turns and the right size are unmeasured.
 
 **Open decisions as reported on 2026-11-04** (recs, not approved):
 1. Floor plant (NOT STANDARD).
