@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gaze ruler</title>
+<style>
+  :root { color-scheme: dark; --bg: #000; --fg: #e8e8e8; --muted: #9a9a9a; --dot: #fff; --flash: #fff; --warn: #ffb347; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  #setup { max-width: 60ch; padding: 24px 16px; }
+  .muted { color: var(--muted); }
+  label { display: inline-flex; gap: 8px; align-items: center; margin-right: 16px; }
+  input { width: 6ch; font: inherit; }
+  button { font: inherit; padding: 6px 16px; }
+  #message { color: var(--warn); min-height: 1.5em; }
+  #stage { position: fixed; inset: 0; display: none; background: var(--bg); cursor: none; }
+  #stage.flash { background: var(--flash); }
+  #dot { position: absolute; display: none; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; background: var(--dot); }
+  #dot::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: var(--bg); }
+</style>
+</head>
+<body>
+<main id="setup">
+  <h1>Gaze ruler</h1>
+  <p>Any camera works: an iPhone (Live Link Face or the camera app), an Android phone, or a webcam through OBS. Put it beside or just under the screen, facing you, in good light. Sit about 60 cm from the screen.</p>
+  <ol>
+    <li>Start recording on the camera.</li>
+    <li>Press Start. The screen flashes white three times, a dot visits nine spots twice, then it flashes three times again. About a minute.</li>
+    <li>Keep your head still and follow the dot with your eyes only.</li>
+    <li>Stop recording after the last flashes, and put the video in <code>E:\Dev\Web\just-mocap\in</code>.</li>
+  </ol>
+  <p class="muted">Optional, for angles: your distance to the screen and the screen's visible width.</p>
+  <p>
+    <label>Distance, cm <input id="distance" type="number" min="20" max="200" value="60"></label>
+    <label>Screen width, cm <input id="screen" type="number" min="10" max="300" placeholder="?"></label>
+  </p>
+  <p><button id="start">Start</button></p>
+  <p id="message" role="status"></p>
+</main>
+<div id="stage"><div id="dot"></div></div>
+<script type="module">
+// The 9-point grid eye trackers calibrate with, at 10%, 50% and 90% of the screen; the centre opens and closes each round.
+const GRID = [[0.1, 0.1], [0.5, 0.1], [0.9, 0.1], [0.1, 0.5], [0.5, 0.5], [0.9, 0.5], [0.1, 0.9], [0.5, 0.9], [0.9, 0.9]];
+const ROUNDS = [[4, 0, 8, 2, 6, 1, 7, 3, 5, 4], [4, 6, 2, 3, 1, 8, 0, 5, 7, 4]];
+const HOLD_MS = 2500;
+// Three white flashes, on 250 ms, off 350 ms: the light they throw on the face marks the page's clock in any video.
+const FLASH_ON_MS = 250;
+const FLASH_OFF_MS = 350;
+const $ = (id) => document.getElementById(id);
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const painted = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+$("start").addEventListener("click", async () => {
+  const name = `gaze_${new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "_")}`;
+  $("setup").style.display = "none";
+  $("stage").style.display = "block";
+  await document.documentElement.requestFullscreen().catch(() => {});
+  await wait(1500);
+  const t0 = performance.now();
+  const now = () => (performance.now() - t0) / 1000;
+  const flashes = [];
+  const flash = async () => {
+    for (let i = 0; i < 3; i += 1) {
+      $("stage").classList.add("flash");
+      await painted();
+      flashes.push(now());
+      await wait(FLASH_ON_MS);
+      $("stage").classList.remove("flash");
+      await wait(FLASH_OFF_MS);
+    }
+  };
+  await flash();
+  await wait(1000);
+  const targets = [];
+  $("dot").style.display = "block";
+  for (const order of ROUNDS) {
+    for (const index of order) {
+      const [x, y] = GRID[index];
+      $("dot").style.left = `${x * 100}%`;
+      $("dot").style.top = `${y * 100}%`;
+      await painted();
+      targets.push({ x, y, onset: now() });
+      await wait(HOLD_MS);
+    }
+  }
+  $("dot").style.display = "none";
+  const dotsEnd = now();
+  await wait(1000);
+  await flash();
+  await document.exitFullscreen().catch(() => {});
+  $("stage").style.display = "none";
+  $("setup").style.display = "block";
+  const schedule = {
+    name, flashes, flashOnSeconds: FLASH_ON_MS / 1000, flashOffSeconds: FLASH_OFF_MS / 1000, holdSeconds: HOLD_MS / 1000, targets, dotsEnd,
+    screen: { cssWidth: window.innerWidth, cssHeight: window.innerHeight, devicePixelRatio: window.devicePixelRatio, widthCm: Number($("screen").value) || null },
+    distanceCm: Number($("distance").value) || null,
+  };
+  try {
+    const saved = await fetch(`/schedule?name=${name}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(schedule) });
+    if (!saved.ok) throw new Error(await saved.text());
+    $("message").textContent = `Saved the dot schedule as ${name}.json. ${await saved.text()} Now stop the recording and put the video in the same folder.`;
+  } catch (error) {
+    $("message").textContent = `Saving the schedule failed: ${error.message}`;
+  }
+});
+</script>
+</body>
+</html>

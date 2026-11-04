@@ -140,6 +140,25 @@ Undistortion alone, against the original with the default focal, leaves world mo
 
 Built under the 2026-11-04 go (decision 3): `bench/lens.js` (`focalTag`, `lensFor`), and `mocap.js --focal35 <mm>`. It reads the 35 mm equivalent from `--focal35`, or else the video's own tag, and converts along the frame's diagonal (Panoptic's 27.38 mm gives its calibrated 1394 px). It gives GEM-X a per-take `gemx_config.json` with `camera.intrinsics`; GEM-X's own `load_body_video_config` makes the model paths absolute (checked: all five resolve). `lens.json` beside `gem.pt` stops a run that asks for a different lens than the existing `gem.pt` was made with; takes from before count as the default lens (checked on clip 2338's take, both ways). Tests: `node --test bench/lens.test.js` (3 pass). ffmpeg can only write the Apple key at file level, so the test covers that. Whether ffprobe shows the track-level key of a real iPhone file is unknown, and a clip without a tag says so and points at `--focal35`.
 
+**Gaze ruler, built 2026-11-04** under "go on all", for any camera (iPhone, Android, webcam).
+- `bench/gaze/index.html`, served by `bench/gaze_ruler.js` on 127.0.0.1 only:
+  - the 9-point grid eye trackers calibrate with, twice, 2.5 s a dot;
+  - three white full-screen flashes at the start and the end (on 250 ms, off 350 ms);
+  - the dot schedule is saved to `in/`.
+- The page records nothing. A first version recorded the webcam in the page, which an iPhone or Android phone can't do, so it was dropped.
+- `bench/truth_gaze.py` decodes any video through ffmpeg to 30 fps (rotation applied). It finds both flash sets by a matched filter on the face's brightness, timing each to a fraction of a frame, and maps the page's clock to the video's. It then scores, per eye, the pupil's place in the eye and MediaPipe's eyeLook blendshapes against the dot's place:
+  - correlation per frame and per dot, with the sign shown, since a mirrored video flips it;
+  - accuracy in degrees after a linear fit, when distance and screen width are typed;
+  - head turn, as a stillness check.
+
+Checked on a synthetic recording (`tmp/gaze_test`): one Multiface frame held for a minute, brightened during the flashes, starting 2.0 s before the page's clock. The scorer found the flashes at 1.98 s and 55.78 s (true 2.0 and 55.80, within half a frame), with a clock ratio of 1.00000. On a clip with no flashes it stops and says so. The server's own checks:
+- the page is served and its script parses (`node --check`);
+- a schedule is saved;
+- a bad name is refused;
+- an existing file isn't overwritten.
+
+Not yet measured on a real gaze take, and Live Link Face's CSV isn't read yet.
+
 **Lens for a user's clip, searched 2026-11-04.** Panoptic 00_07's 1395.7 px on a 2203 px diagonal is a 27 mm equivalent (by diagonal, 43.27 mm full frame), about a phone's main camera. GEM-X's default, focal = diagonal, is 43 mm, so a phone clip also gets too long a focal length. Queries:
 1. "iPhone video metadata focal length 35mm equivalent exiftool QuickTime camera lens": Apple's AVFoundation documents a track-level QuickTime key `com.apple.quicktime.camera.focal_length.35mm_equivalent`, a string such as "50.00mm", from iOS 26.0, beside a lens model tag. ExifTool reads it as the "VideoKeys" group from 13.13; user reports say older iPhone .mov files carry no lens data.
 2. "estimate camera focal length from single image open source GeoCalib MoGe-2 field of view accuracy": [GeoCalib](https://github.com/cvg/GeoCalib) (ETH Zurich, ECCV 2024, Apache-2.0, pushed 2026-10-29) estimates focal length and gravity from one image, with uncertainty. MoGe-2 (arXiv 2507.02546) gets the field of view as a by-product of its point map.
