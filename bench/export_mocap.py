@@ -2,7 +2,8 @@
 
 BVH: GEM-X's 77 public SOMA joints with SAM 3D Body's fingers, Hips as root, centimetres, Y up, ZXY channels. The rest
 pose is this person's SOMA reference pose (every rotation zero), offsets are world-aligned, and each channel is the joint's
-rotation relative to that rest pose, so frame values of zero give the reference pose. One body shape for the clip: GEM-X's
+rotation relative to that rest pose, so frame values of zero give the reference pose. Jaw and eyes are written at rest, since GEM-X barely moves them, and the
+face CSV carries jaw and gaze. One body shape for the clip: GEM-X's
 own SOMA adapter takes the clip's mean when it is given a sequence, and the adapter itself poses the skeleton here.
 
 Face, when a face result is given: MediaPipe's blendshapes from mp_face.py, gaps up to half a second filled, then a
@@ -39,6 +40,14 @@ length = world["transl"].shape[1]
 
 # --- Pose the clip and the rest pose with the same mean shape, through GEM-X's own adapter.
 adapter = SomaFixedGs1BodyAdapter(SomaRuntimeConfig(data_root="assets/soma", device="cpu", lod="low"))
+# Jaw and eyes go out at rest. GEM-X holds them still at about 11° off for the eyes and within 0.6° for the jaw (RESEARCH.md,
+# 2026-11-04), which isn't motion and would turn a character's eyes. Jaw and gaze go out in the face CSV (JawOpen,
+# EyeLook*). body_pose holds the 76 joints after Hips, each relative to its parent at rest, so zero is the rest pose.
+public = [str(n) for n in adapter.runtime.public_joint_names]
+FACE_JOINTS = ("Jaw", "LeftEye", "RightEye")
+pose = world["body_pose"].reshape(1, length, -1, 3).clone()
+pose[:, :, [public.index(n) - 2 for n in FACE_JOINTS]] = 0
+world["body_pose"] = pose.reshape(1, length, -1)
 with torch.inference_mode():
     posed = adapter(**world, return_joints_only=True)
     rest = adapter(

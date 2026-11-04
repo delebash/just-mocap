@@ -130,6 +130,12 @@ Neither is wired in or measured here.
 
 **Eyes and jaw in the body file, measured 2026-11-04.** In `out/take/pan_fingers2338_full/pan_fingers2338_full.bvh`, both eyes sit at -11.2° X and ±3.8° Y for the whole clip (range 0.3°), and the jaw within 0.6°. These are GEM-X's near-constant values (section 13: spread 0.01-0.08° on all four clips), not motion. A retargeter that maps eye bones would hold the character's eyes about 11° off and slightly turned in or out. The face CSV already carries `JawOpen` (follows Multiface at 0.96) and the eye-look curves.
 
+Built under the 2026-11-04 go: `export_mocap.py` zeroes Jaw, LeftEye and RightEye in `body_pose` before posing. These joints have no children, and zero is the rest pose in SOMA's parent-relative convention. Test on clip 2338's take, exported to `out/take/pan_fingers2338_full/rest_test/`:
+- the face channels are 0 (within 1e-6°), and every other channel is unchanged (largest change 0.000000);
+- the BVH reads back within 0.001 mm.
+
+The skeleton offsets differ from the 2026-11-02 file by up to 6 µm, from float rounding with `OMP_NUM_THREADS=4`: an export with default threads matches the old offsets exactly.
+
 **Brows, searched 2026-11-04.** Query: "MediaPipe face blendshapes eyebrow weak improve brow raise from landmarks calibration open source". Found:
 - [MeFaMo](https://github.com/JimWest/MeFaMo) (MIT, 506 stars, last push 2023-03-26), `blendshape_calculator.py`: the brow keys come from MediaPipe landmark distances in its pose-normalised face geometry, mapped through fixed hand-set ranges (`blendshape_config.py`):
   - brow 27/257 to the mean of 53, 52, 65 and 283, 282, 295 gives BrowDown and BrowOuterUp per side;
