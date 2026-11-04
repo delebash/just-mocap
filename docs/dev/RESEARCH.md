@@ -239,6 +239,24 @@ So the plant isn't in `mocap.js`, pending the user's call. A full-body solve (ro
 
 **GEM-X's "up" against Panoptic's calibration** (`bench/gem_gravity.py`): GEM-X's world-to-camera rotation (root camera orientation times world orientation transposed) puts world up 9.9-17.7° from the calibrated camera's up on average, 3-24° per frame; it changes with the lens (12.0 and 17.7° calibrated). Its torso lean in its own world is close to the measured one (11.1 against 8.4°, 28.8 against 28.2°), so the error lies mostly in where GEM-X places the camera, not in its world.
 
+**Brows, built and measured 2026-11-04 under "go brows"; not kept, and the "weak brows" finding corrected.** `bench/face_brows.py`:
+- the brow and inner-brow height from MediaPipe's 3D points, with the head turn undone by its facial transformation matrix;
+- mapped by rank (quantile mapping) onto MediaPipe's own values for each key in the clip, so the size stays MediaPipe's;
+- MediaPipe's own values kept when the two disagree under 0.3.
+
+Test on Multiface (`tmp/brows_multiface.py`; `bench/mp_face_frames.py` now also saves the 3D points and the matrix, `out/mfface3d_*`; scored by `bench/brows_mf.js`, all eight sequences, 428 frames):
+- **Two-sided**, against the brow's full height as section 13 scored it: the new keys follow no better than MediaPipe's (right up 0.81 against 0.81, left 0.71-0.73 against 0.73-0.74).
+- **One-sided**, as ARKit defines its keys (browOuterUp is zero at rest and for lowered brows, browDown the reverse): an Up key is scored against how far the real brow rises above its rest height (its median over the neutral sequence), a Down key against how far it drops below.
+
+| Full / 140 px / 70 px face | MediaPipe's keys | New keys | Our points (linear) |
+|---|---|---|---|
+| Right up | 0.86 / 0.88 / 0.88 | 0.86 / 0.87 / 0.87 | 0.94 / 0.93 / 0.93 |
+| Right down | 0.97 / 0.97 / 0.97 | 0.97 / 0.97 / 0.97 | 0.46 / 0.47 / 0.42 |
+| Left up | 0.91 / 0.91 / 0.90 | 0.91 / 0.90 / 0.89 | 0.88 / 0.86 / 0.86 |
+| Left down | 0.98 / 0.98 / 0.98 | 0.96 / 0.95 / 0.94 | 0.68 / 0.66 / 0.62 |
+
+So section 13's "brows are the weak part" (blendshapes 0.73-0.82 against points 0.88-0.97) came from scoring one-sided keys against a two-sided measure. MediaPipe's brow keys follow well; the rebuilt keys do no better and aren't in `export_mocap.py`. What stays open is the keys' size against an ARKit ruler (ComfyUI's SAM 3D Body face node doc says MediaPipe's brows run low, 0.1-0.3). Head turns were not tested, since Multiface's camera faces the person.
+
 **Re-attacked 2026-11-04 ("rethink them all adeverserily"), designs changed, not built (NOT STANDARD):**
 - Floor plant: a per-stance offset (the planted heel or toe's rest height minus its height), blended across swings and added to GEM-X's own root height, instead of replacing the root height. That keeps real bounce and jumps. Only stances with firm contact (heel and toe above 0.8) set an offset, so a half-planted raised heel (0.62 on 13858) isn't pulled down. Off switch for stairs and ramps.
 - Brows: our points' brow height, fitted per clip by least squares onto MediaPipe's own brow blendshapes, so the timing follows the better measure while the size stays MediaPipe's. This replaces a per-clip neutral, which fails when someone holds one expression. MediaPipe's 3D points with its head transform undone, so a head turn doesn't read as a brow move.

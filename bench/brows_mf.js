@@ -70,7 +70,7 @@ function measures(p, index, layout) {
   out.mefamoInner = d(p[index(MEFAMO.inner[0])], p[index(MEFAMO.inner[1])]) / unit;
   return out;
 }
-const real = [], mine = [], shapes = [];
+const real = [], mine = [], shapes = [], restFrames = [];
 for (const expression of expressions) {
   const mp = mpFrames(expression, size);
   for (const mesh of meshFrames(expression)) {
@@ -79,8 +79,10 @@ for (const expression of expressions) {
     real.push(measures(mesh.image, (i) => map[i], truthLayout));
     mine.push(measures(face.points, (i) => i, mediapipeLayout(face.points)));
     shapes.push(face.shapes);
+    restFrames.push(expression === NEUTRAL);
   }
 }
+const median = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
 const corr = (a, b) => {
   const ma = a.reduce((s, v) => s + v, 0) / a.length, mb = b.reduce((s, v) => s + v, 0) / b.length;
   let n = 0, da = 0, db = 0;
@@ -95,6 +97,19 @@ for (const [side, Side] of [["right", "Right"], ["left", "Left"]]) {
   const innerTruth = col(real, `inner${Side}`);
   console.log(`  ${side} brow height: our points ${corr(truth, col(mine, `our${Side}`)).toFixed(2)}, MeFaMo distance ${corr(truth, col(mine, `mefamo${Side}`)).toFixed(2)} (its own truth ${corr(col(real, `mefamo${Side}`), col(mine, `mefamo${Side}`)).toFixed(2)}), browOuterUp${Side} ${corr(truth, shape(`browOuterUp${Side}`)).toFixed(2)}, browDown${Side} ${corr(truth, shape(`browDown${Side}`)).toFixed(2)}`);
   console.log(`  ${side} inner brow height: our inner points ${corr(innerTruth, col(mine, `inner${Side}`)).toFixed(2)}, MeFaMo inner ${corr(innerTruth, col(mine, "mefamoInner")).toFixed(2)}, browInnerUp ${corr(innerTruth, shape("browInnerUp")).toFixed(2)}`);
+  // One-sided, as ARKit defines the keys: browOuterUp is zero at rest and for lowered brows, browDown zero at rest and for
+  // raised ones. So an Up key is scored against how far the real brow rises above its rest height (its median over the
+  // neutral sequence), a Down key against how far it drops below.
+  const rest = median(truth.filter((_, t) => restFrames[t]));
+  const above = truth.map((h) => Math.max(0, h - rest));
+  const below = truth.map((h) => Math.max(0, rest - h));
+  const oneSided = (prefix) => `up ${corr(above, shape(`${prefix}browOuterUp${Side}`)).toFixed(2)}, down ${corr(below, shape(`${prefix}browDown${Side}`)).toFixed(2)}`;
+  console.log(`  ${side} one-sided: MediaPipe's keys ${oneSided("")}; our points ${corr(above, col(mine, `our${Side}`)).toFixed(2)} up, ${corr(below, col(mine, `our${Side}`).map((v) => -v)).toFixed(2)} down${shapes.some((s) => s && s[`ours_browOuterUp${Side}`] !== undefined) ? `; new keys ${oneSided("ours_")}` : ""}`);
+  // face_brows.py's keys, when the run carries them (tmp/brows_multiface.py writes them as ours_ and ours2d_ shapes).
+  if (shapes.some((s) => s && s[`ours_browOuterUp${Side}`] !== undefined)) {
+    const keys = (prefix) => `browOuterUp ${corr(truth, shape(`${prefix}browOuterUp${Side}`)).toFixed(2)}, browDown ${corr(truth, shape(`${prefix}browDown${Side}`)).toFixed(2)}, browInnerUp ${corr(innerTruth, shape(`${prefix}browInnerUp`)).toFixed(2)}`;
+    console.log(`  ${side} new keys, head turn undone: ${keys("ours_")}; in 2D: ${keys("ours2d_")}; MediaPipe's: ${keys("")}`);
+  }
 }
 for (const Side of ["Right", "Left"]) {
   const lid = col(real, `eye${Side}`);

@@ -2,6 +2,7 @@
 frame is shrunk and enlarged back first, so the face carries only as many pixels as it would in a wider shot; this is
 what a full-body pipeline's head crop sees. Points are written in the original frame's pixels.
 Run with JustStage's tool environment: .dev/venv-tools/Scripts/python mp_face_frames.py <frames dir> <face_landmarker.task> <out.json> [shrink] [fps]
+Also writes the 3D points (z in the same pixel scale as x) and MediaPipe's facial transformation matrix per frame.
 """
 
 import json
@@ -23,6 +24,7 @@ options = vision.FaceLandmarkerOptions(
     running_mode=vision.RunningMode.VIDEO,
     num_faces=1,
     output_face_blendshapes=True,
+    output_facial_transformation_matrixes=True,
 )
 frames = []
 with vision.FaceLandmarker.create_from_options(options) as detector:
@@ -36,7 +38,9 @@ with vision.FaceLandmarker.create_from_options(options) as detector:
         entry = {"name": name}
         if result.face_landmarks:
             entry["points"] = [[p.x * width, p.y * height] for p in result.face_landmarks[0]]
+            entry["points3d"] = [[p.x * width, p.y * height, p.z * width] for p in result.face_landmarks[0]]
             entry["shapes"] = {b.category_name: b.score for b in result.face_blendshapes[0]}
+            entry["matrix"] = np.asarray(result.facial_transformation_matrixes[0]).tolist()
         frames.append(entry)
 with open(out, "w") as handle:
     json.dump({"shrink": shrink, "frames": frames}, handle)
