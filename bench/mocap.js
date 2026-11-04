@@ -6,17 +6,21 @@
 // Every step reads one 30 fps copy of the clip, made by GEM-X's own converter, because GEM-X works at 30 fps and the
 // finger join needs the same frames from both models; a 60 or 29.97 fps phone clip would otherwise not line up.
 // SAM 3D Body runs in pieces sized to the frame: ComfyUI decodes a video into 32-bit floats, about 30 GB for 10 s of 4K.
-// Run: node mocap.js <clip in in/> [finger smoothing none|default|strong]
+// The lens (bench/lens.js): --focal35 <mm>, the phone's 35 mm equivalent, or else the video's own tag where an iPhone wrote
+// one, or else GEM-X's default. It is kept in lens.json beside gem.pt, and a different lens on an existing gem.pt stops.
+// Run: node mocap.js <clip in in/> [finger smoothing none|default|strong] [--focal35 <mm>]
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { parseArgs, promisify } from "node:util";
+import { focalTag, lensFor } from "./lens.js";
 
 const run = promisify(execFile);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const [clip, smoothing = "default"] = process.argv.slice(2);
-if (!clip) throw new Error("usage: node mocap.js <clip in in/> [none|default|strong]");
+const { values: options, positionals } = parseArgs({ allowPositionals: true, options: { focal35: { type: "string" } } });
+const [clip, smoothing = "default"] = positionals;
+if (!clip) throw new Error("usage: node mocap.js <clip in in/> [none|default|strong] [--focal35 <mm>]");
 const name = clip.replace(/\.[^.]+$/, "");
 const source = join(root, "in", clip);
 const take = join(root, "out", "take", name);
@@ -57,8 +61,30 @@ await step("30 fps copy", video, gemxPython, ["-c", normalize, source, video], g
 const { stdout: probe } = await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries", "stream=width,height,nb_read_packets", "-of", "csv=p=0", video]);
 const [width, height, frames] = probe.trim().split(",").map(Number);
 
+const tagged = options.focal35 === undefined ? await focalTag(source) : null;
+const lens = lensFor(options.focal35 === undefined ? tagged : Number(options.focal35), width, height, options.focal35 === undefined ? "the video's 35 mm equivalent tag" : "--focal35");
+console.log(`lens: ${lens.source}${lens.intrinsics ? `, ${lens.focal35} mm equivalent, focal length ${lens.intrinsics[0][0]} px` : options.focal35 === undefined ? " (no focal tag in the video; --focal35 gives the phone's lens)" : ""}`);
+const lensFile = at("lens.json");
+const baseConfig = "weights/body_video_native77_static.yaml";
+let gemConfig = baseConfig;
+if (existsSync(at("gem.pt"))) {
+  // A take made before lens.json existed used GEM-X's default.
+  const before = existsSync(lensFile) ? JSON.parse(readFileSync(lensFile, "utf8")) : lensFor(null);
+  if (JSON.stringify(before.intrinsics) !== JSON.stringify(lens.intrinsics)) {
+    throw new Error(`${at("gem.pt")} was made with another lens (${before.source}); remove gem.pt and the files made after it to redo`);
+  }
+} else {
+  writeFileSync(lensFile, JSON.stringify(lens, null, 1));
+  if (lens.intrinsics) {
+    // GEM-X's config with the lens added; load_body_video_config makes its model paths absolute, so it can live here.
+    gemConfig = at("gemx_config.json");
+    const write = "import json, sys; from gem.inference.body_video import load_body_video_config; c = load_body_video_config(sys.argv[1]); c.setdefault('camera', {})['intrinsics'] = json.loads(sys.argv[2]); json.dump(c, open(sys.argv[3], 'w'), indent=1); print('camera', c['camera'])";
+    await step("GEM-X config with the lens", null, gemxPython, ["-c", write, baseConfig, JSON.stringify(lens.intrinsics), gemConfig], gemx);
+  }
+}
+
 console.log("GEM-X and SAM 3D Body use the graphics card.");
-await step("GEM-X body", at("gem.pt"), gemInfer, ["motion-video", "--task", "body", "--input", video, "--config", "weights/body_video_native77_static.yaml", "--device", "cuda", "--postprocess", "--soma-assets", "assets/soma", "--output", at("gem.pt")], gemx);
+await step("GEM-X body", at("gem.pt"), gemInfer, ["motion-video", "--task", "body", "--input", video, "--config", gemConfig, "--device", "cuda", "--postprocess", "--soma-assets", "assets/soma", "--output", at("gem.pt")], gemx);
 
 const mesh = at("sam-mhr.npz");
 if (!existsSync(mesh)) {

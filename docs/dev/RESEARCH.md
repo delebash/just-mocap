@@ -122,6 +122,24 @@ Measured floor range: 17 mm (4648), 31 mm (13858). Each GEM-X run took 302-357 s
   - Motion is 2-10 mm worse.
   - GEM-X's raw height still drifts 72-272 mm, so a fix needs one floor height per stance, not only the raw y.
 
+**Focal length alone**, measured 2026-11-04 (`tmp/gem_undistdefault.ps1`, 289 and 272 s): the undistorted walks, like a phone's rectified video, with GEM-X's default focal against the calibrated one. Exported world motion, contact IK:
+
+| Walk, focal | Pose | Motion | Accel | Hip path | Hip travel (real) | Camera-space motion / hip path |
+|---|---|---|---|---|---|---|
+| 4648, default 2203 px | 26.7 | 76.6 | 7.40 | 68.1 | 2619 (2464) | 133.1 / 105.5 |
+| 4648, calibrated 1394 px | 28.5 | 72.0 | 7.57 | 62.4 | 2601 | 54.4 / 48.6 |
+| 13858, default | 37.6 | 84.4 | 8.83 | 71.7 | 2663 (2498) | 141.8 / 116.1 |
+| 13858, calibrated | 38.5 | 73.8 | 9.01 | 62.2 | 2619 | 69.7 / 53.1 |
+
+The real focal length alone moves:
+- world motion 4.6 and 10.6 mm closer, and hip path 5.7 and 9.5 mm closer;
+- the camera-space path about twice as close;
+- pose 1.8 and 0.9 mm worse, and accel 0.2 worse.
+
+Undistortion alone, against the original with the default focal, leaves world motion level (76.6 against 79.2, 84.4 against 83.4) and improves the camera-space path (133 against 182, 142 against 194).
+
+Built under the 2026-11-04 go (decision 3): `bench/lens.js` (`focalTag`, `lensFor`), and `mocap.js --focal35 <mm>`. It reads the 35 mm equivalent from `--focal35`, or else the video's own tag, and converts along the frame's diagonal (Panoptic's 27.38 mm gives its calibrated 1394 px). It gives GEM-X a per-take `gemx_config.json` with `camera.intrinsics`; GEM-X's own `load_body_video_config` makes the model paths absolute (checked: all five resolve). `lens.json` beside `gem.pt` stops a run that asks for a different lens than the existing `gem.pt` was made with; takes from before count as the default lens (checked on clip 2338's take, both ways). Tests: `node --test bench/lens.test.js` (3 pass). ffmpeg can only write the Apple key at file level, so the test covers that. Whether ffprobe shows the track-level key of a real iPhone file is unknown, and a clip without a tag says so and points at `--focal35`.
+
 **Lens for a user's clip, searched 2026-11-04.** Panoptic 00_07's 1395.7 px on a 2203 px diagonal is a 27 mm equivalent (by diagonal, 43.27 mm full frame), about a phone's main camera. GEM-X's default, focal = diagonal, is 43 mm, so a phone clip also gets too long a focal length. Queries:
 1. "iPhone video metadata focal length 35mm equivalent exiftool QuickTime camera lens": Apple's AVFoundation documents a track-level QuickTime key `com.apple.quicktime.camera.focal_length.35mm_equivalent`, a string such as "50.00mm", from iOS 26.0, beside a lens model tag. ExifTool reads it as the "VideoKeys" group from 13.13; user reports say older iPhone .mov files carry no lens data.
 2. "estimate camera focal length from single image open source GeoCalib MoGe-2 field of view accuracy": [GeoCalib](https://github.com/cvg/GeoCalib) (ETH Zurich, ECCV 2024, Apache-2.0, pushed 2026-10-29) estimates focal length and gravity from one image, with uncertainty. MoGe-2 (arXiv 2507.02546) gets the field of view as a by-product of its point map.
