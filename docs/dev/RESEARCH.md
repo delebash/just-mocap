@@ -208,6 +208,37 @@ So MeFaMo's measure, taken from the upper lid crease (27/257), drops the lids bu
 6. Test clip, now with one handheld take.
 7. Gaze ruler.
 
+**Floor plant, built and measured 2026-11-04 under "go floor plant"** (`bench/floor_plant.py`, CPU, a few seconds a clip). GEM-X's `correct_static_translation`, then a root-height offset, then GEM-X's `correct_static_pose` unchanged.
+- The offset: where GEM-X's heel (Foot) or toe (ToeBase) contact is above 0.8, that joint belongs at its standing height (rest pose, above the rest pose's lowest joint: ankle 6.4 cm, toe base 1.6 cm). The contact-weighted mean of that gap is fitted with a Whittaker-Henderson smoother (weights = contact, second-difference penalty 10) and added to the root height.
+- Six runs: both walks, each with the original lens, the calibrated lens and the turning camera. Before is GEM-X with contact IK, as exported.
+
+| Run | Floor range, mm (real 17 / 31) | Pose, mm | Accel | Foot slide, mm (real 4.6 / 3.4) | Bob where GEM-X is firm, mm | Upright motion, mm | Hip height RMS, cm |
+|---|---|---|---|---|---|---|---|
+| 4648 original | 302 → 17 | 26.2 → 26.1 | 7.20 → 7.27 | 3.1 → 3.4 | 3.32 → 3.57 | 128.1 → 96.0 | 9.5 → 2.3 |
+| 4648 calibrated | 299 → 14 | 28.5 → 28.5 | 7.57 → 7.63 | 3.0 → 3.1 | 3.12 → 3.51 | 115.2 → 88.2 | 8.9 → 2.1 |
+| 4648 turning camera | 288 → 16 | 26.9 → 26.8 | 7.46 → 7.55 | 3.1 → 3.4 | 2.75 → 3.45 | 125.8 → 96.9 | 9.2 → 2.5 |
+| 13858 original | 289 → 38 | 37.1 → 37.2 | 9.38 → 9.45 | 3.3 → 3.7 | 3.04 → 10.19 | 120.0 → 105.3 | 8.9 → 4.8 |
+| 13858 calibrated | 287 → 27 | 38.5 → 38.4 | 9.01 → 9.06 | 3.0 → 3.2 | 2.72 → 6.08 | 110.5 → 94.9 | 9.1 → 3.7 |
+| 13858 turning camera | 259 → 29 | 36.4 → 36.3 | 11.07 → 11.19 | 3.6 → 3.9 | 3.49 → 7.04 | 124.4 → 109.4 | 9.0 → 4.1 |
+
+The new scores (scripts in `bench/`):
+- **Upright motion** (`truth_upright.js`): the whole-clip error with GEM-X's up kept on the measured up, one turn about the vertical, one shift and one scale. `truth_body.js`'s motion uses a full similarity, which tilted the drifting clip and showed the plant 9-12 mm worse; with up kept up it is 15-32 mm better.
+- **Hip height RMS** (`truth_hip_height.js`): the hip's height above its own floor over time, no line-up, GEM-X scaled by leg length.
+- **Bob** (`truth_planted.js`): a planted ankle's up-and-down inside a measured stance, on frames where GEM-X calls that foot firm. The measured data's own bob is 3.1 and 3.9 mm (`tmp/truth_bob.js`).
+
+**Kept against its approved test? No.** The test was: "keep only if the floor nears the real 17-31 mm with pose, foot slide and jerk no worse". Floor, pose and jerk pass, but foot slide is 0.1-0.4 mm worse. Planted feet also bob more: by 0.3-0.7 mm on 4648, and by 3.4-7.2 mm on 13858.
+
+Why, on 13858 (`tmp/floor_levels.py`): in GEM-X's own world, its two firmly planted feet in double support sit 8-14 cm apart in height (left 18-26 cm, right 10-12 cm, same frames). Its foot pitch also swings: heel above toe by 1.3-7.7 cm, against 4.8 cm in the rest pose. GEM-X's world followed its feet up and down; on one flat floor, one root offset can't put both down.
+
+Tried and dropped:
+- a straight blend then Gaussian smoothing (σ 3), which ramped the offset inside stances;
+- one level per foot per stance (bob 7.1 against 6.4 on 4648);
+- GEM-X's leg IK aimed at the floor (a copy of `correct_static_pose` with firm targets at standing height, equal to GEM-X's to 0.0 with the change off): slide better on 4648, worse on 13858 (3.7 to 4.4), bob unchanged.
+
+So the plant isn't in `mocap.js`, pending the user's call. A full-body solve (root and legs together, as UnderPressure's cleanup optimises) would be the way to plant both feet in double support.
+
+**GEM-X's "up" against Panoptic's calibration** (`bench/gem_gravity.py`): GEM-X's world-to-camera rotation (root camera orientation times world orientation transposed) puts world up 9.9-17.7° from the calibrated camera's up on average, 3-24° per frame; it changes with the lens (12.0 and 17.7° calibrated). Its torso lean in its own world is close to the measured one (11.1 against 8.4°, 28.8 against 28.2°), so the error lies mostly in where GEM-X places the camera, not in its world.
+
 **Re-attacked 2026-11-04 ("rethink them all adeverserily"), designs changed, not built (NOT STANDARD):**
 - Floor plant: a per-stance offset (the planted heel or toe's rest height minus its height), blended across swings and added to GEM-X's own root height, instead of replacing the root height. That keeps real bounce and jumps. Only stances with firm contact (heel and toe above 0.8) set an offset, so a half-planted raised heel (0.62 on 13858) isn't pulled down. Off switch for stairs and ramps.
 - Brows: our points' brow height, fitted per clip by least squares onto MediaPipe's own brow blendshapes, so the timing follows the better measure while the size stays MediaPipe's. This replaces a per-clip neutral, which fails when someone holds one expression. MediaPipe's 3D points with its head transform undone, so a head turn doesn't read as a brow move.
