@@ -9,6 +9,31 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-03, wrist orientation, the runner's card test and the finger resolution limit
+
+**Wrist** (`bench/truth_wrist.js`, new): the hand's rotation relative to the forearm (forearm frame from shoulder, elbow and wrist; hand frame from the wrist and the index, middle and pinky knuckles), against Panoptic's measured hands, median degrees, left then right. Elbows straighter than 155° are skipped. The other hand scores 31-120°, so the sides hold.
+
+| Clip | GEM-X's wrist (join until now) | SAM 3D Body's wrist copied (`join_fingers.py ... sam`) | SAM 3D Body alone |
+|---|---|---|---|
+| 2338 | 43.4, 35.5 (roll 37.3, 26.4) | 21.1, 16.0 (roll 19.7, 14.2) | 11.0, 15.2 |
+| 20728 | 42.7, 24.2 | 20.6, 11.8 | 11.3, 11.7 |
+| 4648 (78-79 frames) | 15.7, 11.3 | 10.4, 15.0 | 12.4, 16.1 |
+| 13858 | 18.2, 44.9 | 16.9, 26.2 | 17.3, 19.2 |
+
+So the join's hands were turned 24-45° wrong close up, mostly in roll, and copying SAM 3D Body's wrist rotation halves that with the finger scores unchanged. `mocap.js` now copies it. The rest is roll: the forearm's twist still comes from GEM-X.
+
+**Runner card test:** `mocap.js` on a 60 fps copy of clip 2338 (GEM-X's result reused, since GEM-X converts to 30 fps itself): 30 fps copy, SAM 3D Body in two pieces (258 and 42 frames, 4,892 MiB peak, ComfyUI 12.6 GB RAM peak), joined to 300 frames, BVH and FBX read back within 0.004 mm. Joined fingers 8.0, 7.8 mm, bend 8.3°, 7.6°, against 8.0, 7.8 mm and 8.2°, 7.4° before.
+
+**Finger resolution limit** (SAM 3D Body alone on clip 2338, left then right):
+
+| Size | Hands | Shape, mm | Bend error, deg | Follows | Shown |
+|---|---|---|---|---|---|
+| Full | 110-122 px | 7.3, 7.7 | 9.5, 8.5 | 0.95, 0.95 | 97%, 96% |
+| Half | 55-61 px | 8.0, 8.6 | 9.5, 9.0 | 0.95, 0.95 | 98%, 97% |
+| Quarter | 28-30 px | 12.7, 12.4 | 13.2, 11.8 | 0.89, 0.90 | 50%, 52% |
+
+Fingers break between about 30 and 55 px. A full-body 1080p shot puts hands near 50 px, at the edge; 4K puts them near 100 px.
+
 ### 2026-11-03, Kimodo foot cleanup and PoseInversion refinement, measured, no card used
 
 Kimodo MotionCorrection, upstream (github.com/nv-tlabs/kimodo, commit e1c219c, Apache-2.0), built for Python 3.12 with Visual Studio 2026 in 76 s into `tmp/kimodo-mc` (`pip install --no-deps --no-build-isolation --target`, `CMAKE_GENERATOR="Visual Studio 18 2026"`). `bench/kimodo_feet.py` runs it on the exported BVH (GEM-X's contact-IK body) with GEM-X's own foot contacts. Scored by `truth_body.js`, before then after:

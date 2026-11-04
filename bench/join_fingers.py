@@ -8,7 +8,7 @@ Writes two point sets: "samSoma" is SAM 3D Body's whole pose in SOMA (the conver
 with SAM's fingers. Scoring both against the truth shows what the conversion loses and what the join loses.
 
 Run from the GEM-X folder with its venv:
-  python join_fingers.py <gem.pt> <sam-mhr.npz> <out.json> [repose 1|0] [fit json] [frame|mean] [none|default|strong]
+  python join_fingers.py <gem.pt> <sam-mhr.npz> <out.json> [repose 1|0] [fit json] [frame|mean] [none|default|strong] [wrist gemx|sam]
 The optional fit json passes PoseInversion.fit arguments, e.g. '{"finger_iters": 2, "lie_iters": 5}'.
 The last argument smooths the copied finger rotations over time with SOMA's own RTS smoother on SO(3), using that
 preset's hand gains; GEM-X's body is left as it is. The joined parameters are also saved beside the json, as .npz.
@@ -45,6 +45,9 @@ fit_options = json.loads(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] != "-
 # "frame" fits each frame with SAM's own shape for that frame; "mean" uses one average shape for the clip.
 shape_mode = sys.argv[6] if len(sys.argv) > 6 else "frame"
 smoothing = sys.argv[7] if len(sys.argv) > 7 else "none"
+# "sam" also copies the two wrist rotations (hand relative to forearm) from SAM 3D Body: on the close Panoptic clips
+# GEM-X's wrist was 24-43° off against SAM's 11-15° (truth_wrist.js, RESEARCH.md 2026-11-03). "gemx" keeps GEM-X's.
+wrist_source = sys.argv[8] if len(sys.argv) > 8 else "gemx"
 FINGERS = ("Thumb", "Index", "Middle", "Ring", "Pinky")
 
 
@@ -91,6 +94,10 @@ sam_joints = layer.pose(relative, transl=result["root_translation"], pose2rot=Fa
 # --- GEM-X's pose with SAM's fingers.
 gem = torch.load(gem_file, map_location="cpu", weights_only=False)
 finger_ids = [i for i, n in enumerate(public[2:]) if "Hand" in n and any(f in n for f in FINGERS)]
+if wrist_source == "sam":
+    finger_ids += [i for i, n in enumerate(public[2:]) if n in ("LeftHand", "RightHand")]
+elif wrist_source != "gemx":
+    raise SystemExit("wrist source must be gemx or sam")
 geometry = MotionGeometry(soma_assets="assets/soma", device="cpu", lod="low")
 names = [n for n in geometry.body_model.runtime.rig_data["joint_names"] if "Twist" not in n and n != "Root"]
 if [str(n) for n in names] != public[1:]:
@@ -133,4 +140,4 @@ for key, side in (("left", "Left"), ("right", "Right")):
     out["joinedWorld"][key] = (joints_world[:, ids] * 100).tolist()
 with open(out_file, "w") as handle:
     json.dump(out, handle)
-print(f"frames {int(found.sum())} of {len(found)}, mesh fit error {error_mm:.1f} mm, finger joints copied {len(finger_ids)}, repose {repose}, smoothing {smoothing}")
+print(f"frames {int(found.sum())} of {len(found)}, mesh fit error {error_mm:.1f} mm, hand joints copied {len(finger_ids)} (wrist from {wrist_source}), repose {repose}, smoothing {smoothing}")
