@@ -22,6 +22,12 @@ export async function focalTag(file) {
   return null;
 }
 
+// Webcams state their lens as a diagonal field of view (the Logitech C920: 78°); this is its 35 mm equivalent.
+export function focal35FromFov(degrees) {
+  if (!(Number.isFinite(degrees) && degrees > 0 && degrees < 180)) throw new Error(`the field of view must be degrees between 0 and 180, got ${degrees}`);
+  return FULL_FRAME_DIAGONAL_MM / (2 * Math.tan((degrees * Math.PI) / 360));
+}
+
 // GEM-X's camera.intrinsics for a 35 mm equivalent focal length, principal point at the centre as GEM-X's own default.
 export function lensFor(focal35, width, height, source) {
   if (focal35 === null || focal35 === undefined) return { source: "GEM-X's default: focal length = image diagonal" };

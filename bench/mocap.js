@@ -6,21 +6,23 @@
 // Every step reads one 30 fps copy of the clip, made by GEM-X's own converter, because GEM-X works at 30 fps and the
 // finger join needs the same frames from both models; a 60 or 29.97 fps phone clip would otherwise not line up.
 // SAM 3D Body runs in pieces sized to the frame: ComfyUI decodes a video into 32-bit floats, about 30 GB for 10 s of 4K.
-// The lens (bench/lens.js): --focal35 <mm>, the phone's 35 mm equivalent, or else the video's own tag where an iPhone wrote
-// one, or else GEM-X's default. It is kept in lens.json beside gem.pt, and a different lens on an existing gem.pt stops.
-// Run: node mocap.js <clip in in/> [finger smoothing none|default|strong] [--focal35 <mm>]
+// The lens (bench/lens.js): --focal35 <mm>, a phone's 35 mm equivalent, or --fov <degrees>, a webcam's diagonal field of
+// view, or else the video's own tag where an iPhone wrote one, or else GEM-X's default. It is kept in lens.json beside
+// gem.pt, and a different lens on an existing gem.pt stops.
+// Run: node mocap.js <clip in in/> [finger smoothing none|default|strong] [--focal35 <mm> | --fov <degrees>]
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
-import { focalTag, lensFor } from "./lens.js";
+import { focal35FromFov, focalTag, lensFor } from "./lens.js";
 
 const run = promisify(execFile);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const { values: options, positionals } = parseArgs({ allowPositionals: true, options: { focal35: { type: "string" } } });
+const { values: options, positionals } = parseArgs({ allowPositionals: true, options: { focal35: { type: "string" }, fov: { type: "string" } } });
 const [clip, smoothing = "default"] = positionals;
-if (!clip) throw new Error("usage: node mocap.js <clip in in/> [none|default|strong] [--focal35 <mm>]");
+if (!clip) throw new Error("usage: node mocap.js <clip in in/> [none|default|strong] [--focal35 <mm> | --fov <degrees>]");
+if (options.focal35 !== undefined && options.fov !== undefined) throw new Error("give --focal35 or --fov, not both");
 const name = clip.replace(/\.[^.]+$/, "");
 const source = join(root, "in", clip);
 const take = join(root, "out", "take", name);
@@ -61,9 +63,9 @@ await step("30 fps copy", video, gemxPython, ["-c", normalize, source, video], g
 const { stdout: probe } = await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries", "stream=width,height,nb_read_packets", "-of", "csv=p=0", video]);
 const [width, height, frames] = probe.trim().split(",").map(Number);
 
-const tagged = options.focal35 === undefined ? await focalTag(source) : null;
-const lens = lensFor(options.focal35 === undefined ? tagged : Number(options.focal35), width, height, options.focal35 === undefined ? "the video's 35 mm equivalent tag" : "--focal35");
-console.log(`lens: ${lens.source}${lens.intrinsics ? `, ${lens.focal35} mm equivalent, focal length ${lens.intrinsics[0][0]} px` : options.focal35 === undefined ? " (no focal tag in the video; --focal35 gives the phone's lens)" : ""}`);
+const given = options.focal35 !== undefined ? ["--focal35", Number(options.focal35)] : options.fov !== undefined ? [`--fov ${options.fov}`, focal35FromFov(Number(options.fov))] : null;
+const lens = given ? lensFor(given[1], width, height, given[0]) : lensFor(await focalTag(source), width, height, "the video's 35 mm equivalent tag");
+console.log(`lens: ${lens.source}${lens.intrinsics ? `, ${lens.focal35.toFixed(1)} mm equivalent, focal length ${lens.intrinsics[0][0]} px` : " (no focal tag in the video; --focal35 or --fov gives the camera's lens)"}`);
 const lensFile = at("lens.json");
 const baseConfig = "weights/body_video_native77_static.yaml";
 let gemConfig = baseConfig;

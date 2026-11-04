@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { focalTag, lensFor } from "./lens.js";
+import { focal35FromFov, focalTag, lensFor } from "./lens.js";
 
 const run = promisify(execFile);
 const sample = fileURLToPath(new URL("../in/pan_walk4648.mp4", import.meta.url));
@@ -16,6 +16,17 @@ test("Panoptic camera 00_07: its 27.4 mm equivalent gives its calibrated focal l
   const lens = lensFor(27.38, 1920, 1080, "test");
   assert.ok(Math.abs(lens.intrinsics[0][0] - 1394) < 1, `got ${lens.intrinsics[0][0]}`);
   assert.deepEqual([lens.intrinsics[0][2], lens.intrinsics[1][2]], [960, 540]);
+});
+
+test("a webcam's diagonal field of view gives the same lens as its 35 mm equivalent", () => {
+  // Panoptic 00_07: 1394 px on a 2203 px diagonal is a 76.6° diagonal view.
+  const fov = (2 * Math.atan(Math.hypot(1920, 1080) / 2 / 1394) * 180) / Math.PI;
+  const lens = lensFor(focal35FromFov(fov), 1920, 1080, "test");
+  assert.ok(Math.abs(lens.intrinsics[0][0] - 1394) < 0.5, `got ${lens.intrinsics[0][0]}`);
+  // Logitech C920: 78° diagonal is about a 26.7 mm equivalent.
+  assert.ok(Math.abs(focal35FromFov(78) - 26.72) < 0.05, `got ${focal35FromFov(78)}`);
+  assert.throws(() => focal35FromFov(0));
+  assert.throws(() => focal35FromFov(180));
 });
 
 test("no focal length leaves GEM-X's default, a bad one stops", () => {
