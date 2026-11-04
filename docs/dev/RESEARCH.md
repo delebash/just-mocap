@@ -9,6 +9,25 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-03, the floor drifts 29-30 cm in GEM-X's own world, no card used
+
+Correction of the floor block below: its "not a slow drift or a tilt" was wrong. It rested on 4648's left stance from frame 124, which GEM-X itself marks as not planted (heel contact 0.03, toe 0.06: the real heel is up there), and on heights taken after `truth_body.js`'s one alignment per clip, which rotates and scales a drifting floor nearly flat.
+
+New score in `truth_body.js`, "own floor": the spread and range of planted ankle heights in the result's own world frame, with no alignment, over the stances where the real ankle sits at its usual planted height (within 3 cm of the median), so raised heels don't count. `STANCES=1 CONTACTS=<json>` now also prints GEM-X's own heel and toe contact per stance, knee bend, hip-to-ankle reach and the own-frame height.
+
+| Walk | Real | GEM-X raw world | GEM-X with contact IK (exported) | Kimodo after contact IK |
+|---|---|---|---|---|
+| 4648, spread, range | 4.8, 17 mm | 61.4, 199 mm | 92.3, 302 mm | 87.9, 277 mm |
+| 13858, spread, range | 9.4, 31 mm | 24.5, 94 mm | 81.7, 289 mm | 77.1, 263 mm |
+
+So in the exported motion the planted feet go down about 30 cm over each 10 s walk: on 4648 the left foot plants at 35.8 cm at frame 19 and 8.2 cm at frame 187. A character on a flat floor would float at the start and sink later. The cause is mostly GEM-X's own contact step: `correct_static_translation` (`gem/motion/postprocess/contact.py:157-166`) rebuilds the root path as the running sum of root motion minus the planted joints' motion in all three axes, smooths only x and z, then lowers the whole clip once so its lowest point is at 0. Any vertical slip of a "planted" joint adds up. The root after the step minus before, every 30 frames: 4648 120.2, 108.9, 104.2, 103.5, 106.0, 100.1, 99.1, 100.9, 101.3, 102.5 cm; 13858 116.5, 107.7, 102.1, 102.5, 99.2, 99.1, 97.5, 97.0, 95.5, 92.1 cm (the constant part is the one lowering). GEM-X raw drifts too, 9-20 cm.
+
+The aligned stance heights mislead in a second way: the alignment's scale shrinks GEM-X's legs to a hip-to-ankle reach of 75-76 cm on 13858 (real 80-86), which reads as a 6 cm float on every stance. Knee bend on level stances matches the truth within a few degrees (e.g. 4648: 175/175, 174/178), so the legs are not too bent there. On raised-heel stances GEM-X bends the knee more (4648 frame 124: 174 real, 153 GEM-X).
+
+GEM-X upstream (NVlabs/GEM-X, fetched 2026-11-03): two commits after ours (20555be, 2026-10-21): `4aef145` adds `--camera-mode vipe` (ViPE camera rotations and intrinsics for moving cameras, `docs/VIPE_CAMERA.md`), `9c6e8bb` adds benchmark evaluation. `contact.py` is unchanged. Issue #9 "The heel lifts off the ground" is open; a maintainer suggests moving the mesh's lowest point to y=0, which is one shift for the whole clip and can't fix a drift. No issue reports the vertical drift (the titles of all 28 issues, open and closed, read; #9 read in full).
+
+`video2mocap` (`tmp/video2mocap`, 484bfc5, Apache-2.0) has ground placement (one median shift) and a foot lock whose anchors snap to the ground with two-bone IK only, so it can't lower a foot that floats more than the leg's slack.
+
 ### 2026-11-03, wrist orientation, the runner's card test and the finger resolution limit
 
 **Wrist** (`bench/truth_wrist.js`, new): the hand's rotation relative to the forearm (forearm frame from shoulder, elbow and wrist; hand frame from the wrist and the index, middle and pinky knuckles), against Panoptic's measured hands, median degrees, left then right. Elbows straighter than 155° are skipped. The other hand scores 31-120°, so the sides hold.
@@ -44,7 +63,7 @@ So the join's hands were turned 24-45° wrong close up, mostly in roll, and copy
 
 Fingers break between about 30 and 55 px. A full-body 1080p shot puts hands near 50 px, at the edge; 4K puts them near 100 px.
 
-**Floor, per planted step** (`STANCES=1 node truth_body.js ...`, GEM-X with contact IK, after the clip's one alignment; Panoptic's y points down, so a negative difference means GEM-X's ankle is higher): walk 4648, by time, -1.0, -3.8, -6.3, -6.0, +0.7, -7.8, -0.2, +1.2, +1.1, +0.1 cm; walk 13858, +1.7, -6.8, -6.4, -5.6, -13.5, -8.1, -6.4, -11.7, -5.9, -5.5, -4.3 cm. Not a slow drift or a tilt, since the left and right feet differ at the same spot (4648 around x -100: -7.8 and +0.7). Planted feet float 4-13 cm in parts of both walks, worst where the real heel is up (real ankle 15-19 cm high, GEM-X's 27-30). So GEM-X's legs are too bent or short on those steps. Kimodo can't fix it: it only lifts a planted foot that sinks. A fix needs a two-sided plant (a planted foot pulled down to the floor as well as up, with leg IK).
+**Floor, per planted step** (corrected in the block above: the floor does drift) (`STANCES=1 node truth_body.js ...`, GEM-X with contact IK, after the clip's one alignment; Panoptic's y points down, so a negative difference means GEM-X's ankle is higher): walk 4648, by time, -1.0, -3.8, -6.3, -6.0, +0.7, -7.8, -0.2, +1.2, +1.1, +0.1 cm; walk 13858, +1.7, -6.8, -6.4, -5.6, -13.5, -8.1, -6.4, -11.7, -5.9, -5.5, -4.3 cm. Not a slow drift or a tilt, since the left and right feet differ at the same spot (4648 around x -100: -7.8 and +0.7). Planted feet float 4-13 cm in parts of both walks, worst where the real heel is up (real ankle 15-19 cm high, GEM-X's 27-30). So GEM-X's legs are too bent or short on those steps. Kimodo can't fix it: it only lifts a planted foot that sinks. A fix needs a two-sided plant (a planted foot pulled down to the floor as well as up, with leg IK).
 
 ### 2026-11-03, Kimodo foot cleanup and PoseInversion refinement, measured, no card used
 

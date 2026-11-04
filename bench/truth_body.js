@@ -91,6 +91,21 @@ function feet(frames) {
   return { slide: mean(slides) * 10, float: Math.sqrt(mean(heights.map((h) => (h - middle) ** 2))) * 10 };
 }
 
+// Floor in the result's own world frame, with no alignment: the spread of planted ankle heights over the stances where
+// the real ankle sits at its usual planted height (within 3 cm of the median), so raised heels don't count. The
+// whole-clip alignment above can tilt a drifting floor flat, so it can't see this. World results only; Panoptic's y
+// and GEM-X's y point opposite ways, which a spread ignores.
+const levelStances = (() => {
+  const heights = planted.map(({ j, frames: list }) => mean(list.map((t) => truth[t][j][1])));
+  const middle = [...heights].sort((a, b) => a - b)[Math.floor(heights.length / 2)];
+  return planted.filter((_, i) => Math.abs(heights[i] - middle) < 3);
+})();
+function ownFloor(frames) {
+  const heights = levelStances.map(({ j, frames: list }) => mean(list.map((t) => frames[t]?.[j]?.[1]).filter((v) => v !== undefined)));
+  const middle = mean(heights);
+  return { spread: Math.sqrt(mean(heights.map((h) => (h - middle) ** 2))) * 10, range: (Math.max(...heights) - Math.min(...heights)) * 10 };
+}
+
 function score(name, frames) {
   const used = frames.map((f, t) => (f && truth[t] ? t : -1)).filter((t) => t >= 0);
   const pose = used.map((t) => {
@@ -102,11 +117,23 @@ function score(name, frames) {
   const motion = used.map((t) => mean(aligned[t].map((p, j) => Math.hypot(...subtract(p, truth[t][j])))));
   if (process.env.STANCES) {
     // Each planted stance: side, first frame, measured and aligned ankle height (cm, Panoptic's y), and the difference.
+    // CONTACTS=<json of GEM-X's sigmoid(static_conf_logits)[:, :4]> adds GEM-X's own heel and toe contact over the stance.
+    const contacts = process.env.CONTACTS ? JSON.parse(readFileSync(process.env.CONTACTS, "utf8")) : null;
     for (const { j, frames: list } of planted) {
       const height = (frames2) => mean(list.map((t) => frames2[t]?.[j]?.[1]).filter((v) => v !== undefined));
       const [real, mine] = [height(truth), height(aligned)];
       const where = [0, 2].map((k) => mean(list.map((t) => (truth[t][3][k] + truth[t][9][k]) / 2)).toFixed(0));
-      console.log(`    stance ${j === LEFT_ANKLE ? "left " : "right"} from ${String(list[0]).padStart(3)} at x ${where[0]} z ${where[1]}: real ${real.toFixed(1)}, ${name} ${mine.toFixed(1)}, off ${(mine - real).toFixed(1)} cm`);
+      const base = j === LEFT_ANKLE ? 0 : 2;
+      const own = contacts ? `, GEM-X contact heel ${mean(list.map((t) => contacts[t][base])).toFixed(2)} toe ${mean(list.map((t) => contacts[t][base + 1])).toFixed(2)}` : "";
+      // Knee bend (180 = straight) and hip-to-ankle reach, real then this result, to tell a bent knee from a short leg.
+      const [hip, knee] = [j - 2, j - 1];
+      const bend = (f) => mean(list.filter((t) => f[t]).map((t) => {
+        const [a, b] = [subtract(f[t][hip], f[t][knee]), subtract(f[t][j], f[t][knee])];
+        return (Math.acos((a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / (Math.hypot(...a) * Math.hypot(...b))) * 180) / Math.PI;
+      }));
+      const reach = (f) => mean(list.filter((t) => f[t]).map((t) => Math.hypot(...subtract(f[t][hip], f[t][j]))));
+      const legs = `, knee ${bend(truth).toFixed(0)}/${bend(aligned).toFixed(0)} deg, reach ${reach(truth).toFixed(1)}/${reach(aligned).toFixed(1)} cm, own-frame ankle y ${height(frames).toFixed(1)}`;
+      console.log(`    stance ${j === LEFT_ANKLE ? "left " : "right"} from ${String(list[0]).padStart(3)}, ${list.length} frames, at x ${where[0]} z ${where[1]}: real ${real.toFixed(1)}, ${name} ${mine.toFixed(1)}, off ${(mine - real).toFixed(1)} cm${own}${legs}`);
     }
   }
   const accel = [];
@@ -142,7 +169,7 @@ function score(name, frames) {
   const pathError = mean(mine.map((p, i) => Math.hypot(...subtract(p, real[i]))));
   const range = (list) => Math.max(...[0, 1, 2].map((k) => Math.max(...list.map((p) => p[k])) - Math.min(...list.map((p) => p[k]))));
   console.log(
-    `  ${name.padEnd(22)} pose ${(mean(pose) * 10).toFixed(1).padStart(6)} mm  motion ${(mean(motion) * 10).toFixed(1).padStart(6)} mm  accel err ${(mean(accel) * 10).toFixed(2).padStart(6)}  shake ${(mean(shake) * 10).toFixed(2).padStart(6)}  hip path err ${(pathError * 10).toFixed(1).padStart(6)} mm  hip travel ${(range(mine) * 10).toFixed(0).padStart(5)} mm (real ${(range(real) * 10).toFixed(0)})  foot slide ${feet(aligned).slide.toFixed(1).padStart(5)} mm  float ${feet(aligned).float.toFixed(1).padStart(5)} mm`,
+    `  ${name.padEnd(22)} pose ${(mean(pose) * 10).toFixed(1).padStart(6)} mm  motion ${(mean(motion) * 10).toFixed(1).padStart(6)} mm  accel err ${(mean(accel) * 10).toFixed(2).padStart(6)}  shake ${(mean(shake) * 10).toFixed(2).padStart(6)}  hip path err ${(pathError * 10).toFixed(1).padStart(6)} mm  hip travel ${(range(mine) * 10).toFixed(0).padStart(5)} mm (real ${(range(real) * 10).toFixed(0)})  foot slide ${feet(aligned).slide.toFixed(1).padStart(5)} mm  float ${feet(aligned).float.toFixed(1).padStart(5)} mm${name.includes("world") ? `  own floor ${ownFloor(frames).spread.toFixed(1)} mm, range ${ownFloor(frames).range.toFixed(0)} mm (real ${ownFloor(truth).spread.toFixed(1)}, ${ownFloor(truth).range.toFixed(0)})` : ""}`,
   );
 }
 
