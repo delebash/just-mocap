@@ -208,6 +208,14 @@ So MeFaMo's measure, taken from the upper lid crease (27/257), drops the lids bu
 6. Test clip, now with one handheld take.
 7. Gaze ruler.
 
+**Body fallback with tracking, run 2026-11-04 under "go 3".** SAM 3.1's checkpoint was downloaded (1,745,546,848 bytes) into ComfyUI's `models/checkpoints`. `run_full.js` has a sixth argument, `track 1`, wired as ComfyUI's template: SAM 3.1 video tracking with the prompt "person", up to 4 objects, RT-DETR at up to 100 boxes, track 0 exported. `subway_guitar_busker.mp4` (1280×720, 24 fps, 121 frames), `node run_full.js subway_guitar_busker.mp4 8 1 1 0 1`: 228 s in all (tracking 37 s, predict 156 s), 5,763 MiB peak.
+- The root jumps per frame of the exported raw BVH: before (one box, no tracking) a median of 2.6 cm, but 320, 315 and 262 cm at frames 3, 2 and 39, the person switches; with tracking a median of 2.5 cm and at most 5.0 cm, so no switch in 121 frames.
+- By eye on 8 overlay frames (`out/pancam/sheet_subway_guitar_busker-b8*.jpg`): the one-box run's second sample has the skeleton on a passer-by and none on the guitarist. With tracking, the guitarist has the main skeleton in all eight, and the passers-by get their own tracks.
+
+So tracking fixes the switch. Not yet in `mocap.js`:
+- track 0 is the first person SAM 3.1 detects, which needn't be GEM-X's person (its largest cumulative box), so the finger join could take another person's hands;
+- `mocap.js` runs SAM 3D Body in pieces for 4K, and track numbers can differ between pieces.
+
 **Floor plant, built and measured 2026-11-04 under "go floor plant"** (`bench/floor_plant.py`, CPU, a few seconds a clip). GEM-X's `correct_static_translation`, then a root-height offset, then GEM-X's `correct_static_pose` unchanged.
 - The offset: where GEM-X's heel (Foot) or toe (ToeBase) contact is above 0.8, that joint belongs at its standing height (rest pose, above the rest pose's lowest joint: ankle 6.4 cm, toe base 1.6 cm). The contact-weighted mean of that gap is fitted with a Whittaker-Henderson smoother (weights = contact, second-difference penalty 10) and added to the root height.
 - Six runs: both walks, each with the original lens, the calibrated lens and the turning camera. Before is GEM-X with contact IK, as exported.
