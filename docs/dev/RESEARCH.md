@@ -118,6 +118,27 @@ Measured floor range: 17 mm (4648), 31 mm (13858). Each GEM-X run took 302-357 s
 
 Neither is wired in or measured here.
 
+**Eyes and jaw in the body file, measured 2026-11-04.** In `out/take/pan_fingers2338_full/pan_fingers2338_full.bvh`, both eyes sit at -11.2° X and ±3.8° Y for the whole clip (range 0.3°), and the jaw within 0.6°. These are GEM-X's near-constant values (section 13: spread 0.01-0.08° on all four clips), not motion. A retargeter that maps eye bones would hold the character's eyes about 11° off and slightly turned in or out. The face CSV already carries `JawOpen` (follows Multiface at 0.96) and the eye-look curves.
+
+**Brows, searched 2026-11-04.** Query: "MediaPipe face blendshapes eyebrow weak improve brow raise from landmarks calibration open source". Found:
+- [MeFaMo](https://github.com/JimWest/MeFaMo) (MIT, 506 stars, last push 2023-03-26), `blendshape_calculator.py`: the brow keys come from MediaPipe landmark distances in its pose-normalised face geometry, mapped through fixed hand-set ranges (`blendshape_config.py`):
+  - brow 27/257 to the mean of 53, 52, 65 and 283, 282, 295 gives BrowDown and BrowOuterUp per side;
+  - inner brow 9 to the upper nose gives BrowInnerUp.
+- REFA (CVPRW 2024, supplemental): per-user calibration that takes a blendshape's most frequent value over 30 s as neutral, applied only to keys where that holds, such as brow raise.
+- ExpressionAppBridge (github.com/Guerra24/ExpressionAppBridge): a startup calibration saved to JSON.
+- ComfyUI's `SAM3DBody_FaceExpression` doc: MediaPipe's brow outputs run low (about 0.1-0.3) and it suggests a 2-3× gain.
+
+Already measured (section 13): MediaPipe's brow points follow the real brow at 0.88-0.97, its brow blendshapes at 0.74-0.82. Still unmeasured: the right size (gain) without an ARKit ruler, BrowInnerUp and BrowDown (the ruler measures mid-brow height only), and head turns.
+
+**Open decisions as reported on 2026-11-04** (recs, not approved):
+1. Floor plant (NOT STANDARD).
+2. Post the drift issue (the user runs it; the permission check blocks me).
+3. Lens from the phone's metadata.
+4. Jaw and eye joints at rest in the body file.
+5. Brows from MediaPipe's points (NOT STANDARD).
+6. Test clip, now with one handheld take.
+7. Gaze ruler.
+
 **Floor fix, existing methods, searched 2026-11-04.** Queries:
 1. "fix vertical drift ground world-grounded human motion from video foot contact post-processing": WHAM (arXiv 2312.07531, a learned trajectory refiner inside WHAM, not standalone), HTD-Refine (arXiv 2605.26879), Zou & Huang WACV 2020 (contact detector plus optimisation), ProxyCap.
 2. "best open source foot contact cleanup mocap floor plant tool 2026": Foot Flow (a Blender add-on, May 2026, its author still testing, no replies), UnderPressure, Mocap Bone Lock (paid Blender add-on).
