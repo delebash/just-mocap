@@ -81,7 +81,7 @@ if (!existsSync(mesh)) {
 }
 await step("head points", at("head2d.json"), gemxPython, [bench("gem_head2d.py"), at("gem.pt"), at("head2d.json")], gemx);
 await step("face", at("face.json"), toolsPython, [bench("mp_face.py"), video, join(root, "models", "face_landmarker.task"), at("head2d.json"), at("face.json")]);
-await step("join fingers", at("join.npz"), gemxPython, [bench("join_fingers.py"), at("gem.pt"), mesh, at("join.json"), "1", "-", "frame", smoothing, "sam"], gemx);
+await step("join fingers", at("join.npz"), gemxPython, [bench("join_fingers.py"), at("gem.pt"), mesh, at("join.json"), "1", "-", "frame", smoothing, "arm"], gemx);
 await step("export", at(`${name}.bvh`), gemxPython, [bench("export_mocap.py"), at("join.npz"), at(name), at("face.json")], gemx);
 const blend = (script, ...args) => ["--background", "--factory-startup", "--python", join(root, "bench", "blender", script), "--", ...args];
 await step("FBX", at(`${name}.fbx`), blender, blend("bvh_to_fbx.py", at(`${name}.bvh`), at(`${name}.fbx`)));

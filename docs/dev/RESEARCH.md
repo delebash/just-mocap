@@ -20,7 +20,17 @@ Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 | 4648 (78-79 frames) | 15.7, 11.3 | 10.4, 15.0 | 12.4, 16.1 |
 | 13858 | 18.2, 44.9 | 16.9, 26.2 | 17.3, 19.2 |
 
-So the join's hands were turned 24-45° wrong close up, mostly in roll, and copying SAM 3D Body's wrist rotation halves that with the finger scores unchanged. `mocap.js` now copies it. The rest is roll: the forearm's twist still comes from GEM-X.
+So the join's hands were turned 24-45° wrong close up, mostly in roll, and copying SAM 3D Body's wrist rotation halves that with the finger scores unchanged. The rest was roll, because the forearm's twist still came from GEM-X. Mode `arm` gives GEM-X's hand SAM's orientation relative to the arm plane (hand world W' = F_gem F_sam^T W_sam, wrist = W_forearm^T W', with W = G O^T, which is what SOMA's pose rotations chain to), keeping GEM-X's elbow:
+
+| Clip | `gemx` | `sam` | `arm` | SAM 3D Body alone |
+|---|---|---|---|---|
+| 2338 | 43.4, 35.5 | 21.1, 16.0 | 9.4, 14.0 | 11.0, 15.2 |
+| 20728 | 42.7, 24.2 | 20.6, 11.8 | 14.1, 13.6 | 11.3, 11.7 |
+| 4648 (78-79 frames) | 15.7, 11.3 | 10.4, 15.0 | 10.0, 20.7 | 12.4, 16.1 |
+| 13858 | 18.2, 44.9 | 16.9, 26.2 | 20.0, 13.9 | 17.3, 19.2 |
+| Mean, worst | 29.5, 44.9 | 17.3, 26.2 | 14.5, 20.7 | 14.3, 19.2 |
+
+`mocap.js` uses `arm`. Finger scores are the same in all three modes.
 
 **Runner card test:** `mocap.js` on a 60 fps copy of clip 2338 (GEM-X's result reused, since GEM-X converts to 30 fps itself): 30 fps copy, SAM 3D Body in two pieces (258 and 42 frames, 4,892 MiB peak, ComfyUI 12.6 GB RAM peak), joined to 300 frames, BVH and FBX read back within 0.004 mm. Joined fingers 8.0, 7.8 mm, bend 8.3°, 7.6°, against 8.0, 7.8 mm and 8.2°, 7.4° before.
 
@@ -33,6 +43,8 @@ So the join's hands were turned 24-45° wrong close up, mostly in roll, and copy
 | Quarter | 28-30 px | 12.7, 12.4 | 13.2, 11.8 | 0.89, 0.90 | 50%, 52% |
 
 Fingers break between about 30 and 55 px. A full-body 1080p shot puts hands near 50 px, at the edge; 4K puts them near 100 px.
+
+**Floor, per planted step** (`STANCES=1 node truth_body.js ...`, GEM-X with contact IK, after the clip's one alignment; Panoptic's y points down, so a negative difference means GEM-X's ankle is higher): walk 4648, by time, -1.0, -3.8, -6.3, -6.0, +0.7, -7.8, -0.2, +1.2, +1.1, +0.1 cm; walk 13858, +1.7, -6.8, -6.4, -5.6, -13.5, -8.1, -6.4, -11.7, -5.9, -5.5, -4.3 cm. Not a slow drift or a tilt, since the left and right feet differ at the same spot (4648 around x -100: -7.8 and +0.7). Planted feet float 4-13 cm in parts of both walks, worst where the real heel is up (real ankle 15-19 cm high, GEM-X's 27-30). So GEM-X's legs are too bent or short on those steps. Kimodo can't fix it: it only lifts a planted foot that sinks. A fix needs a two-sided plant (a planted foot pulled down to the floor as well as up, with leg IK).
 
 ### 2026-11-03, Kimodo foot cleanup and PoseInversion refinement, measured, no card used
 

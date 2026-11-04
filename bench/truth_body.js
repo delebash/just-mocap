@@ -100,6 +100,15 @@ function score(name, frames) {
   const apply = fit(used.flatMap((t) => frames[t]), used.flatMap((t) => truth[t]));
   const aligned = frames.map((f) => f?.map(apply) ?? null);
   const motion = used.map((t) => mean(aligned[t].map((p, j) => Math.hypot(...subtract(p, truth[t][j])))));
+  if (process.env.STANCES) {
+    // Each planted stance: side, first frame, measured and aligned ankle height (cm, Panoptic's y), and the difference.
+    for (const { j, frames: list } of planted) {
+      const height = (frames2) => mean(list.map((t) => frames2[t]?.[j]?.[1]).filter((v) => v !== undefined));
+      const [real, mine] = [height(truth), height(aligned)];
+      const where = [0, 2].map((k) => mean(list.map((t) => (truth[t][3][k] + truth[t][9][k]) / 2)).toFixed(0));
+      console.log(`    stance ${j === LEFT_ANKLE ? "left " : "right"} from ${String(list[0]).padStart(3)} at x ${where[0]} z ${where[1]}: real ${real.toFixed(1)}, ${name} ${mine.toFixed(1)}, off ${(mine - real).toFixed(1)} cm`);
+    }
+  }
   const accel = [];
   const shake = [];
   for (const t of used) {

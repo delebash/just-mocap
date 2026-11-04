@@ -45,8 +45,9 @@ fit_options = json.loads(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] != "-
 # "frame" fits each frame with SAM's own shape for that frame; "mean" uses one average shape for the clip.
 shape_mode = sys.argv[6] if len(sys.argv) > 6 else "frame"
 smoothing = sys.argv[7] if len(sys.argv) > 7 else "none"
-# "sam" also copies the two wrist rotations (hand relative to forearm) from SAM 3D Body: on the close Panoptic clips
-# GEM-X's wrist was 24-43° off against SAM's 11-15° (truth_wrist.js, RESEARCH.md 2026-11-03). "gemx" keeps GEM-X's.
+# Wrist: "gemx" keeps GEM-X's (24-45° off close up, truth_wrist.js, RESEARCH.md 2026-11-03); "sam" copies SAM 3D
+# Body's wrist rotation as it is (17° on average); "arm" gives the hand SAM's orientation relative to the arm plane on
+# GEM-X's arm, which carries SAM's forearm roll too (14.5° on average, the level of SAM alone). mocap.js uses "arm".
 wrist_source = sys.argv[8] if len(sys.argv) > 8 else "gemx"
 FINGERS = ("Thumb", "Index", "Middle", "Ring", "Pinky")
 
@@ -94,10 +95,32 @@ sam_joints = layer.pose(relative, transl=result["root_translation"], pose2rot=Fa
 # --- GEM-X's pose with SAM's fingers.
 gem = torch.load(gem_file, map_location="cpu", weights_only=False)
 finger_ids = [i for i, n in enumerate(public[2:]) if "Hand" in n and any(f in n for f in FINGERS)]
-if wrist_source == "sam":
+if wrist_source in ("sam", "arm"):
     finger_ids += [i for i, n in enumerate(public[2:]) if n in ("LeftHand", "RightHand")]
 elif wrist_source != "gemx":
-    raise SystemExit("wrist source must be gemx or sam")
+    raise SystemExit("wrist source must be gemx, sam or arm")
+index = {name: i for i, name in enumerate(public[1:])}  # 77 joints, Hips first
+parents77 = [int(p) - 1 for p in layer.output_joint_parent_ids[1:]]  # Hips' parent, the virtual Root, becomes -1
+
+
+def chain_world(rel):
+    """World rotations relative to the rest pose (W = G O^T) from SOMA's T-pose-relative rotations, which are
+    W_parent^T W_joint (rig_utils.remove_joint_orient_local: O_parent R_abs O^T). rel is (T, 77, 3, 3), Hips first."""
+    world = torch.empty_like(rel)
+    for j, p in enumerate(parents77):
+        world[:, j] = rel[:, j] if p < 0 else world[:, p] @ rel[:, j]
+    return world
+
+
+def arm_frame(joints, side):
+    """Columns: elbow to wrist, then the arm plane (shoulder, elbow, wrist) and its normal. joints is (T, 77, 3)."""
+    shoulder, elbow, wrist = (joints[:, index[f"{side}{n}"]] for n in ("Arm", "ForeArm", "Hand"))
+    x = torch.nn.functional.normalize(wrist - elbow, dim=-1)
+    z = torch.nn.functional.normalize(torch.cross(x, shoulder - elbow, dim=-1), dim=-1)
+    return torch.stack([x, torch.cross(z, x, dim=-1), z], -1)
+
+
+sam_world = chain_world(relative) if wrist_source == "arm" else None
 geometry = MotionGeometry(soma_assets="assets/soma", device="cpu", lod="low")
 names = [n for n in geometry.body_model.runtime.rig_data["joint_names"] if "Twist" not in n and n != "Root"]
 if [str(n) for n in names] != public[1:]:
@@ -114,7 +137,18 @@ def joined(key):
         raise SystemExit(f"GEM-X has {length} frames, SAM 3D Body {relative.shape[0]}")
     pose = rotvec_to_matrix(params["body_pose"].reshape(1, length, 76, 3))
     use = found[None, :, None]
-    fingers = torch.where(use[..., None, None], relative[None, :, 1:][:, :, finger_ids], pose[:, :, finger_ids])
+    source = relative[:, 1:].clone()  # SAM's 76 body_pose rotations
+    if wrist_source == "arm":
+        # Keep GEM-X's arm and give its hand SAM's orientation relative to the arm plane: hand world W' = F_gem F_sam^T
+        # W_sam, then the wrist rotation is W_forearm^T W'. This carries SAM's forearm roll too, not only its wrist.
+        gem_world = chain_world(torch.cat([rotvec_to_matrix(params["global_orient"].reshape(1, length, 1, 3)), pose], 2)[0])
+        with torch.no_grad():
+            gem_joints = geometry(params)["joints"][0].detach()
+        for side in ("Left", "Right"):
+            hand = index[f"{side}Hand"]
+            target = arm_frame(gem_joints, side) @ arm_frame(sam_joints.detach(), side).transpose(-1, -2) @ sam_world[:, hand]
+            source[:, hand - 1] = (gem_world[:, index[f"{side}ForeArm"]].transpose(-1, -2) @ target).detach()
+    fingers = torch.where(use[..., None, None], source[None][:, :, finger_ids], pose[:, :, finger_ids])
     if smoothing != "none":
         fingers = rts_smooth_rotations(fingers[0], fps=fps, gains=RTS_SMOOTHING_PRESETS[smoothing].hand)[None]
     pose[:, :, finger_ids] = fingers
