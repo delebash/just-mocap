@@ -208,6 +208,17 @@ So MeFaMo's measure, taken from the upper lid crease (27/257), drops the lids bu
 6. Test clip, now with one handheld take.
 7. Gaze ruler.
 
+**Re-attacked 2026-11-04 ("rethink them all adeverserily"), designs changed, not built (NOT STANDARD):**
+- Floor plant: a per-stance offset (the planted heel or toe's rest height minus its height), blended across swings and added to GEM-X's own root height, instead of replacing the root height. That keeps real bounce and jumps. Only stances with firm contact (heel and toe above 0.8) set an offset, so a half-planted raised heel (0.62 on 13858) isn't pulled down. Off switch for stairs and ramps.
+- Brows: our points' brow height, fitted per clip by least squares onto MediaPipe's own brow blendshapes, so the timing follows the better measure while the size stays MediaPipe's. This replaces a per-clip neutral, which fails when someone holds one expression. MediaPipe's 3D points with its head transform undone, so a head turn doesn't read as a brow move.
+
+**Body fallback, checked 2026-11-04.** ComfyUI's own SAM 3D Body template (`comfyui_workflow_templates_json/templates/utility_sam3d_body.json`, 0.11.97) tracks with `SAM3_VideoTrack`:
+- SAM 3.1, `sam3.1_multiplex_fp16.safetensors` through `CheckpointLoaderSimple`, with the prompt "person" (widgets 0.5, 4, 1);
+- RT-DETR at up to 100 boxes;
+- both into `SAM3DBody_Predict`'s `track_data` and `bboxes`.
+
+Its note: "For multiple people in same clip SAM3 is practically required". `run_full.js` caps RT-DETR at one box and doesn't track. The checkpoint isn't on disk: Comfy-Org/sam3.1 on Hugging Face, `checkpoints/sam3.1_multiplex_fp16.safetensors`, 1.75 GB, SAM License, not gated. It waits for the user's OK to download.
+
 **Floor fix, existing methods, searched 2026-11-04.** Queries:
 1. "fix vertical drift ground world-grounded human motion from video foot contact post-processing": WHAM (arXiv 2312.07531, a learned trajectory refiner inside WHAM, not standalone), HTD-Refine (arXiv 2605.26879), Zou & Huang WACV 2020 (contact detector plus optimisation), ProxyCap.
 2. "best open source foot contact cleanup mocap floor plant tool 2026": Foot Flow (a Blender add-on, May 2026, its author still testing, no replies), UnderPressure, Mocap Bone Lock (paid Blender add-on).
