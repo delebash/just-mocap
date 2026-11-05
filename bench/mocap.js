@@ -6,10 +6,15 @@
 // Every step reads one 30 fps copy of the clip, made by GEM-X's own converter, because GEM-X works at 30 fps and the
 // finger join needs the same frames from both models; a 60 or 29.97 fps phone clip would otherwise not line up.
 // SAM 3D Body runs in pieces sized to the frame: ComfyUI decodes a video into 32-bit floats, about 30 GB for 10 s of 4K.
+// It is given, per frame, only the detector box of the person GEM-X captures (gem_person_boxes.py and
+// comfy_nodes/just_mocap_person.py), so the fingers joined on are that person's in every frame and every piece.
 // The lens (bench/lens.js): --focal35 <mm>, a phone's 35 mm equivalent, or --fov <degrees>, a webcam's diagonal field of
 // view, or else the video's own tag where an iPhone wrote one, or else GEM-X's default. It is kept in lens.json beside
 // gem.pt, and a different lens on an existing gem.pt stops.
-// Run: node mocap.js <clip in in/> [finger smoothing none|default|strong] [--focal35 <mm> | --fov <degrees>]
+// The floor plant (bench/floor_plant.py) keeps GEM-X's planted feet on one floor, so the motion doesn't drift up or down;
+// it is on by default, as DeepMotion's and Reallusion's grounding is, and --no-floor-plant turns it off for stairs, ramps
+// or uneven ground. The choice is kept in floor.json, and the other choice on an existing join.npz stops.
+// Run: node mocap.js <clip in in/> [finger smoothing none|default|strong] [--focal35 <mm> | --fov <degrees>] [--no-floor-plant]
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -19,9 +24,12 @@ import { focal35FromFov, focalTag, lensFor } from "./lens.js";
 
 const run = promisify(execFile);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const { values: options, positionals } = parseArgs({ allowPositionals: true, options: { focal35: { type: "string" }, fov: { type: "string" } } });
+const { values: options, positionals } = parseArgs({
+  allowPositionals: true,
+  options: { focal35: { type: "string" }, fov: { type: "string" }, "no-floor-plant": { type: "boolean" } },
+});
 const [clip, smoothing = "default"] = positionals;
-if (!clip) throw new Error("usage: node mocap.js <clip in in/> [none|default|strong] [--focal35 <mm> | --fov <degrees>]");
+if (!clip) throw new Error("usage: node mocap.js <clip in in/> [none|default|strong] [--focal35 <mm> | --fov <degrees>] [--no-floor-plant]");
 if (options.focal35 !== undefined && options.fov !== undefined) throw new Error("give --focal35 or --fov, not both");
 const name = clip.replace(/\.[^.]+$/, "");
 const source = join(root, "in", clip);
@@ -88,10 +96,31 @@ if (existsSync(at("gem.pt"))) {
 console.log("GEM-X and SAM 3D Body use the graphics card.");
 await step("GEM-X body", at("gem.pt"), gemInfer, ["motion-video", "--task", "body", "--input", video, "--config", gemConfig, "--device", "cuda", "--postprocess", "--soma-assets", "assets/soma", "--output", at("gem.pt")], gemx);
 
+const floorPlant = !options["no-floor-plant"];
+const floorFile = at("floor.json");
+if (existsSync(at("join.npz"))) {
+  // A take made before floor.json existed had no floor plant.
+  const before = existsSync(floorFile) ? JSON.parse(readFileSync(floorFile, "utf8")).floorPlant : false;
+  if (before !== floorPlant) {
+    throw new Error(`${at("join.npz")} was made with the floor plant ${before ? "on" : "off"}; remove join.npz and the files made after it to redo, or run ${before ? "without" : "with"} --no-floor-plant`);
+  }
+} else {
+  writeFileSync(floorFile, JSON.stringify({ floorPlant }, null, 1));
+}
+// gem.pt stays GEM-X's own; the finger join, the only step that reads the body's pose, reads the planted copy.
+const body = floorPlant ? at("gem_planted.pt") : at("gem.pt");
+if (floorPlant) await step("floor plant", body, gemxPython, [bench("floor_plant.py"), at("gem.pt"), body], gemx);
+else console.log("floor plant: off (--no-floor-plant)");
+
 const mesh = at("sam-mhr.npz");
 if (!existsSync(mesh)) {
   const up = await fetch("http://127.0.0.1:8199/system_stats").then((r) => r.ok, () => false);
   if (!up) throw new Error("ComfyUI is not running on port 8199; start it as run_full.js describes, then run this again");
+  await step("GEM-X's person boxes", at("person.json"), gemxPython, [bench("gem_person_boxes.py"), at("gem.pt"), at("person.json")], gemx);
+  const person = JSON.parse(readFileSync(at("person.json"), "utf8"));
+  if (person.width !== width || person.height !== height || person.boxes.length !== frames) {
+    throw new Error(`GEM-X's boxes are for ${person.boxes.length} frames of ${person.width}x${person.height}, the 30 fps copy has ${frames} of ${width}x${height}`);
+  }
   const perPiece = Math.max(30, Math.floor((PIECE_GB * 2 ** 30) / (width * height * 3 * 4)));
   const pieces = [];
   for (let first = 0, i = 0; first < frames; first += perPiece, i++) {
@@ -101,15 +130,17 @@ if (!existsSync(mesh)) {
     // Lossless, so SAM 3D Body sees exactly the 30 fps copy's frames.
     await step(`piece ${tag}, frames ${first}-${last - 1}`, piece, "ffmpeg", ["-v", "error", "-nostdin", "-y", "-i", video, "-vf", `trim=start_frame=${first}:end_frame=${last},setpts=PTS-STARTPTS`, "-c:v", "libx264", "-qp", "0", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-an", piece]);
     // ComfyUI reads it from its output folder (the "[output]" annotation) and saves under out/mocap/<same path>.
-    const saved = join(root, "out", "mocap", "take", name, "sam", `${tag}-b8-mhr.npz`);
-    await step(`SAM 3D Body ${tag}`, saved, process.execPath, [bench("run_full.js"), `take/${name}/sam/${tag}.mp4 [output]`, "8", "1", "0", "1"], join(root, "bench"));
+    const boxes = join(take, "sam", `${tag}-person.json`);
+    writeFileSync(boxes, JSON.stringify(person.boxes.slice(first, last)));
+    const saved = join(root, "out", "mocap", "take", name, "sam", `${tag}-b8-person-mhr.npz`);
+    await step(`SAM 3D Body ${tag}`, saved, process.execPath, [bench("run_full.js"), `take/${name}/sam/${tag}.mp4 [output]`, "8", "1", "0", "1", "0", boxes], join(root, "bench"));
     pieces.push(saved);
   }
   await step("join SAM 3D Body pieces", mesh, gemxPython, [bench("concat_mhr.py"), mesh, String(frames), ...pieces]);
 }
 await step("head points", at("head2d.json"), gemxPython, [bench("gem_head2d.py"), at("gem.pt"), at("head2d.json")], gemx);
 await step("face", at("face.json"), toolsPython, [bench("mp_face.py"), video, join(root, "models", "face_landmarker.task"), at("head2d.json"), at("face.json")]);
-await step("join fingers", at("join.npz"), gemxPython, [bench("join_fingers.py"), at("gem.pt"), mesh, at("join.json"), "1", "-", "frame", smoothing, "arm"], gemx);
+await step("join fingers", at("join.npz"), gemxPython, [bench("join_fingers.py"), body, mesh, at("join.json"), "1", "-", "frame", smoothing, "arm"], gemx);
 await step("export", at(`${name}.bvh`), gemxPython, [bench("export_mocap.py"), at("join.npz"), at(name), at("face.json")], gemx);
 const blend = (script, ...args) => ["--background", "--factory-startup", "--python", join(root, "bench", "blender", script), "--", ...args];
 await step("FBX", at(`${name}.fbx`), blender, blend("bvh_to_fbx.py", at(`${name}.bvh`), at(`${name}.fbx`)));

@@ -14,7 +14,10 @@ GEM-X's own two post-process steps run as GEM-X runs them (gem/motion/postproces
    The idea is UnderPressure's footskate cleanup (Mourot et al., SCA 2022), which pins each contact at ground height,
    here for the root height only. Its code is licensed for research only and none of it is copied.
 3. correct_static_pose: GEM-X's leg IK, unchanged.
-It assumes one flat floor, so stairs and ramps would be flattened.
+It assumes one flat floor, so stairs and ramps would be flattened: mocap.js runs it by default (the user's go, 2026-11-05)
+and --no-floor-plant turns it off. With fewer than two firmly planted frames (a waist-up take, say) it changes nothing and
+says so. Before the first and after the last firm contact the offset levels off over about a second, so a take that ends
+sitting or lying down doesn't carry the last stance's slope to its end.
 
 Tried and dropped (RESEARCH.md, 2026-11-04):
 - a straight blend then Gaussian smoothing, which let the offset ramp inside stances;
@@ -38,14 +41,18 @@ from gem.motion.postprocess.contact import SOMA_CONTACT_JOINT_IDS, correct_stati
 FIRM = 0.8
 FEET = list(SOMA_CONTACT_JOINT_IDS[:4])  # LeftFoot, LeftToeBase, RightFoot, RightToeBase; hands aren't floor contacts
 SMOOTH = 10.0
+LEVEL = 30  # frames over which a slope dies out where no foot is firmly planted, about a second at 30 fps
 
 
-def whittaker(values, weights, smooth):
+def whittaker(values, weights, smooth, level=LEVEL):
     """Whittaker-Henderson smoothing: the curve closest to the weighted values with small second differences, the
-    standard penalised least squares. Frames with no weight are filled by the smoothness alone."""
+    standard penalised least squares. Frames with no weight are filled by the smoothness alone. A second-difference
+    penalty alone continues the last slope in a straight line there, so a small first-difference penalty is added too
+    (smooth / level squared, the mixed-order penalty): a slope then dies out over about `level` frames."""
     count = len(values)
+    first = np.diff(np.eye(count), n=1, axis=0)
     second = np.diff(np.eye(count), n=2, axis=0)
-    system = np.diag(weights) + smooth * second.T @ second
+    system = np.diag(weights) + smooth * second.T @ second + smooth / level**2 * first.T @ first
     return np.linalg.solve(system, weights * np.nan_to_num(values))
 
 
@@ -64,7 +71,7 @@ def plant(gem, smooth=SMOOTH):
         total = weight.sum(-1)
         known = (total > 0).numpy()
         if known.sum() < 2:
-            raise SystemExit("fewer than two frames with a firm foot contact: nothing to plant")
+            return {**gem, "floor_plant": {"firm_contact": FIRM, "firm_frames": int(known.sum()), "skipped": True}}
         values = (((standing[None] - joints[:, FEET, 1]) * weight).sum(-1) / total.clamp_min(1e-6)).numpy()
         offset = torch.from_numpy(whittaker(values, total.numpy(), smooth)).float()
         planted = transl.clone()
@@ -90,4 +97,7 @@ if __name__ == "__main__":
     result = plant(torch.load(gem_file, map_location="cpu", weights_only=False))
     torch.save(result, out_file)
     info = result["floor_plant"]
-    print(f"floor plant: {info['firm_frames']} frames with a firm foot contact, standing heights {info['standing_heights_m']} m, offset {info['offset_m'][0]:+.3f} to {info['offset_m'][1]:+.3f} m")
+    if info.get("skipped"):
+        print(f"floor plant skipped: {info['firm_frames']} frames with a firm foot contact, under two; the motion is GEM-X's as it is")
+    else:
+        print(f"floor plant: {info['firm_frames']} frames with a firm foot contact, standing heights {info['standing_heights_m']} m, offset {info['offset_m'][0]:+.3f} to {info['offset_m'][1]:+.3f} m")
