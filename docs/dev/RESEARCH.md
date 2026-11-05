@@ -9,6 +9,37 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-05, the two open decisions re-attacked from code and past runs, no card used
+
+**Correction to the floor plant's keep-test result below.** It said "floor, pose and jerk pass". The table's Accel column, acceleration error against the truth (`truth_body.js:4`), is worse in all six runs, by 0.6-1.2% (7.20→7.27, 7.57→7.63, 7.46→7.55, 9.38→9.45, 9.01→9.06, 11.07→11.19). So the plant misses the approved test on two counts, foot slide and acceleration, plus the bob.
+
+**Floor plant, failure cases found in `bench/floor_plant.py`:**
+- Under two frames with a firm foot contact, it exits (line 67). Inside `mocap.js` that would stop the whole run, for example on a waist-up take with the feet out of frame. Whether GEM-X marks out-of-frame feet as firm is unmeasured.
+- The Whittaker-Henderson fit (lines 43-49) penalises only second differences. Where no frame has weight, the solution runs on as a straight line. So after the last firm contact, and before the first, the offset keeps the slope of the last few firm frames to the clip's end. Example: a take that ends sitting or lying down. Only walks were measured, where contact is firm throughout.
+- Who reads `gem.pt` in `mocap.js`:
+  - `gem_head2d.py` reads `conditions.kp2d_native77`, which the plant doesn't change;
+  - `preview_export.py:41` reads `conditions.K_fullimg`, also unchanged;
+  - `join_fingers.py:173-174` reads both `pred_soma_params_incam` and `pred_soma_params_global`, which the plant writes.
+
+  So only the join needs the planted file.
+
+**How other mocap apps handle the floor**:
+- "DeepMotion Animate 3D foot locking option default" led to [DeepMotion's Animate 3D REST API](https://github.com/DeepMotion/Animate-3D-REST-API) (read). `footLockingMode`'s default is `auto`: "default mode, automatic switching between locking and gliding modes of the foot, recommended for general cases". `never` is "forced to disable foot locking and character grounding", and `grounding` is "forced disabling foot locking, however character is still grounded".
+- [DeepMotion's foot locking guide](https://deepmotion.com/article/foot-locking) (read) recommends Never "for motions that are completely in the air or in water".
+- "QuickMagic AI mocap foot lock ground contact setting": no QuickMagic documentation of a setting was found, only reviews praising its foot planting (unread beyond the search snippets).
+- [Reallusion Motion LIVE 2D's height page](https://manual.reallusion.com/Motion_LIVE_2D_Plugin/Resources/CTA_4/Plugins/Motion_Live_2D/Dynamically_Adjusting_Height.htm) (read): "By default, the effective Floor Contact for Feet and Hands gives the power to capture 2D character's ground motions", with a Ground slider for the floor height.
+
+So keeping the character on the floor by default, with a switch to turn it off, is what these apps do. Our plant is like DeepMotion's `grounding`: root height only, no foot lock.
+
+**Tracking, facts from ComfyUI's code and `bench/runs.jsonl`:**
+- With `track_data`, `SAM3DBody_Predict` ignores the `bboxes` input ("Precedence: SAM3 track (masks + boxes) > detector boxes", `comfy_extras/nodes_sam3d_body.py:179-185`). So the template's 100-box RT-DETR run goes unused.
+- It runs every tracked object in every frame (`nodes_sam3d_body.py:205-234`), and an object whose mask is empty that frame gets the full frame as its box (`comfy_extras/sam3d_body/utils.py:37-38`).
+- On the guitarist, predict took 38.7 s with one box and 155.8 s with tracking (4.0×); the whole run took 52.5 and 227.7 s (`runs.jsonl` lines 11 and 29).
+- Our save node keeps each frame's first person (`bench/comfy_nodes/just_mocap_save.py:38-46`).
+- GEM-X already tracks its person: YOLOX boxes, ByteTrack, and the track with the largest summed box area, gaps filled by interpolation (`gem/common/detectors/tracks.py:52-136`). `gem.pt` keeps only the enlarged square box (`conditions.bbx_xys`) and the person's 77 2D points with confidence (`conditions.kp2d_native77`).
+- Predict also takes per-frame boxes as an alternative to tracking (`bboxes`, `nodes_sam3d_body.py:146-151`). SAM 3D Body pads the box 1.25× to a 0.75 aspect (`comfy/ldm/sam3d_body/utils.py:106-136`). So GEM-X's square box, already 1.2× larger, would give a crop about 1.33× larger than RT-DETR's tight box on a standing person.
+- Where SAM 3D Body finds no person, `join_fingers.py` keeps GEM-X's own hands for that frame (`found`, lines 66 and 152).
+
 ### 2026-11-04, PoseInversion autograd refinement, moving camera and lens
 
 **The GEM-X drift issue was not posted.** Claude Code's permission check denied `gh issue create` as a public action. No new GEM-X issue covers it: the 28 titles are the same as on 2026-11-03.
@@ -234,7 +265,7 @@ The new scores (scripts in `bench/`):
 - **Hip height RMS** (`truth_hip_height.js`): the hip's height above its own floor over time, no line-up, GEM-X scaled by leg length.
 - **Bob** (`truth_planted.js`): a planted ankle's up-and-down inside a measured stance, on frames where GEM-X calls that foot firm. The measured data's own bob is 3.1 and 3.9 mm (`tmp/truth_bob.js`).
 
-**Kept against its approved test? No.** The test was: "keep only if the floor nears the real 17-31 mm with pose, foot slide and jerk no worse". Floor, pose and jerk pass, but foot slide is 0.1-0.4 mm worse. Planted feet also bob more: by 0.3-0.7 mm on 4648, and by 3.4-7.2 mm on 13858.
+**Kept against its approved test? No.** The test was: "keep only if the floor nears the real 17-31 mm with pose, foot slide and jerk no worse". Floor and pose pass, but foot slide is 0.1-0.4 mm worse and acceleration error 0.6-1.2% worse (corrected 2026-11-05; first written as "jerk passes"). Planted feet also bob more: by 0.3-0.7 mm on 4648, and by 3.4-7.2 mm on 13858.
 
 Why, on 13858 (`tmp/floor_levels.py`): in GEM-X's own world, its two firmly planted feet in double support sit 8-14 cm apart in height (left 18-26 cm, right 10-12 cm, same frames). Its foot pitch also swings: heel above toe by 1.3-7.7 cm, against 4.8 cm in the rest pose. GEM-X's world followed its feet up and down; on one flat floor, one root offset can't put both down.
 
