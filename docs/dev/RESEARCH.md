@@ -9,6 +9,54 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-05, GEM-X's person and the floor plant in `mocap.js`, card used
+
+**Guitarist, `node bench/mocap.js subway_guitar_busker.mp4`** (1280×720, 24 fps, so 151 frames in the 30 fps copy; GEM-X's default lens). It ran end to end:
+- GEM-X 147 s.
+- Floor plant 6 s: 151 frames with a firm foot contact, offset -0.007 to +0.010 m.
+- GEM-X's boxes: seen in 151 frames, filled in 0.
+- SAM 3D Body 64 s (predict 47.8 s, detect 10.0 s at up to 100 boxes), peak 5,092 MiB.
+- Face found in 123 of 151 frames; finger join mesh fit 5.0 mm.
+- BVH and FBX read back in Blender at 0.001 and 0.002 mm.
+
+**The person node** (`bench/comfy_nodes/just_mocap_person.py`, ComfyUI log): GEM-X's person was RT-DETR's top box in 137 frames and another box in 14. It was found in every frame.
+
+**Root jumps** per frame of SAM 3D Body's raw BVH, on the same 30 fps piece (`bvh_root_jumps.py`, scratch):
+- One box, `node run_full.js "take/subway_guitar_busker/sam/p00.mp4 [output]" 8 1 1 0`: median 2.1 cm, max 228.8 cm. Nine steps are over 10 cm, at frames 5, 8, 14, 19, 20, 21, 23, 28 and 30.
+- With GEM-X's person: median 2.1 cm, max 4.8 cm, none over 10. The tracking run of 2026-11-04 on the 24 fps original reached at most 5.0 cm.
+- Both took 64 s, against 228 s with SAM 3.1 tracking.
+
+Comparing the two runs frame by frame, they differ widely in exactly 14 frames: 5-13, 19, 21, 22, 28 and 29, where the one-box run had a passer-by. Elsewhere they differ by at most 0.13 cm and 0.6° per channel, except frame 129, where two joints along one arm (`joint_077` and `joint_078`) differ by 40° and 95°.
+
+A second one-box run (`... 8 1 0 0`) differs from the first only at frame 129: `joint_078` by 94.7°, measured as a true rotation angle. There the person run matches the second run. So SAM 3D Body isn't repeatable at that frame. Outside the 14 passer-by frames, the person run equals the one-box run within SAM 3D Body's own run-to-run difference.
+
+By eye, on the preview every 25 frames (0-150), the skeleton is on the guitarist in all seven.
+
+**The fretting hand is drawn off its fingers** at frames 75 and 125; the strumming hand sits on its fingers. To find the layer, I compared the wrist in pixels as GEM-X's own 2D input points saw it (`conditions.kp2d_native77`, confidence 0.92), as SAM 3D Body projects it (its camera, `comfy/ldm/sam3d_body/model/model.py:955-964`), and as the joined skeleton projects it (`hand_layers.py`, scratch):
+- GEM-X's own left wrist is a median 40 px (p90 94) from its own 2D point. It's the same in `raw_predictions`, after GEM-X's post-process and after the floor plant.
+- Its right wrist is 8 px off (p90 23). SAM 3D Body's left wrist is 12 px off (p90 27).
+- The join puts the hand at GEM-X's wrist, so the joined hand carries GEM-X's error. The layer is GEM-X's model on this clip; the person pick, the plant and the join didn't cause it.
+- On `test60_2338` (Panoptic, 1920×1080), the joined wrists are 20 px from GEM-X's 2D points on both sides, and SAM 3D Body's 8-12 px.
+- GEM-X's motion post-process has no 2D refit (searched `gem/` for reproj, refine, smplify, fit_2d).
+- On Panoptic's measured arms, GEM-X's arms and shoulders beat SAM 3D Body's on all four clips (17-28 mm against 25-38 mm, 2026-10-31 below). Simply taking SAM 3D Body's arm would undo that.
+- Recipe item 3 of the research ("Join the wrist with forearm IK and gates … Fall back to the body's wrist", research file line 42) was never built: the join always falls back to GEM-X's wrist.
+- Untested so far: the lens. The clip has no focal tag, so GEM-X used its default (focal length = image diagonal). The fretting hand is reached toward the camera, where a wrong focal length moves the projection most.
+
+**Walk 4648, `node bench/mocap.js pan_walk4648.mp4`**, the full chain with the floor plant on and GEM-X's person (1920×1080, 300 frames, GEM-X's default lens). It ran end to end:
+- GEM-X 277 s.
+- Floor plant 7 s: 289 frames with a firm foot contact, offset -0.296 to -0.001 m.
+- GEM-X's boxes seen in 300 frames, filled in 0.
+- SAM 3D Body in two pieces (258 and 42 frames), 105 and 26 s, peak 5,048 MiB. GEM-X's person was RT-DETR's top box in all 300 frames.
+- Finger join mesh fit 6.0 mm. Face found in 49 of 300 frames (the head is small and often turned away).
+- BVH and FBX read back at 0.002 mm.
+
+By eye, the preview sheet (frames 30, 90, 150 and 210) has the skeleton on the walker in all four.
+
+**Tests, all green:**
+- `node --test bench/lens.test.js`: 4 of 4.
+- `bench/just_mocap_person_test.py`: 6 of 6.
+- `bench/floor_plant_test.py`: 2 of 2.
+
 ### 2026-11-05, the two open decisions re-attacked from code and past runs, no card used
 
 **Correction to the floor plant's keep-test result below.** It said "floor, pose and jerk pass". The table's Accel column, acceleration error against the truth (`truth_body.js:4`), is worse in all six runs, by 0.6-1.2% (7.20→7.27, 7.57→7.63, 7.46→7.55, 9.38→9.45, 9.01→9.06, 11.07→11.19). So the plant misses the approved test on two counts, foot slide and acceleration, plus the bob.
