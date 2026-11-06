@@ -9,6 +9,135 @@ Section 9 there holds the first measured numbers. New measured results land here
 
 Card: RTX 2070 SUPER 8 GB, 32 GB RAM. Raw runs are in `bench/runs.jsonl`.
 
+### 2026-11-06, the forearm fix tested against Panoptic's measured arms before building, no card used
+
+The user asked for the forearm fix (TASKS item 1) to be attacked again. I tested it first on GEM-X's saved results (`out/gem_<clip>.pt`, default lens, camera-space pose), with `arm_fit_test.py` (scratch, CPU). It moves only the elbow and wrist and keeps the bone lengths. It scores like `truth_body.js`:
+- "pose": a similarity fit per frame on the 12 limb joints;
+- "arms": the six arm joints with their own fit;
+- the arm joints' acceleration error after one fit for the clip.
+
+The scorer's baseline matches research section 12's arms-alone numbers on 2338, 20728 and 13858 (21.3, 17.1, 28.2 mm). On 4648 it gives 16.0 against 18.8 there; not traced. Each variant is compared with the baseline from the same scorer.
+
+**GEM-X against its own 2D points, median px** (shoulder, elbow, wrist, left then right):
+- 2338: 25, 23, 20; 25, 21, 20.
+- 20728: 13, 15, 14; 15, 14, 7.
+- 4648: 7, 5, 7; 8, 9, 7.
+- 13858: 10, 7, 9; 10, 12, 11.
+- Guitarist: 23, 37, 40; 21, 20, 8.
+
+So on the guitarist the left elbow and wrist are off by much more than the shoulder. On 2338 every joint is off by about the same amount.
+
+**Variants, arms mm / arm acceleration error** (baseline first):
+
+| Clip | GEM-X as is | Wrist IK onto its 2D point at GEM-X's depth (my rec of 2026-11-05) | Same, 2D points smoothed over time (Gaussian, sigma 2 frames) | Same, half strength | Elbow and wrist fitted to the smoothed 2D points with a 3D prior (5 px per cm moved) |
+|---|---|---|---|---|---|
+| 2338 | 21.3 / 10.88 | 19.4 / 13.62 | 19.2 / 10.63 | 19.6 / 10.67 | 20.6 / 10.57 |
+| 20728 | 17.1 / 7.45 | 16.6 / 9.11 | 16.5 / 7.23 | 16.5 / 7.29 | 15.8 / 7.29 |
+| 4648 | 16.0 / 20.71 | 21.7 / 25.48 | 21.7 / 20.95 | 18.3 / 20.85 | 15.9 / 20.52 |
+| 13858 | 28.2 / 26.46 | 32.6 / 30.96 | 31.9 / 26.29 | 28.8 / 26.23 | 28.7 / 26.23 |
+
+Guitarist, left wrist and elbow against the 2D points: as is 40 and 37 px; wrist IK 0 and 32 px; the fit with prior 5 gives 12 and 24 px.
+
+- **My rec of 2026-11-05 fails its own keep-test.** The wrist IK makes both walks' arms worse, 4648 by 5.7 mm and 13858 by 3.7-4.4 mm. Unsmoothed, it also raises arm acceleration error by 17-25%. On the walks the 2D wrist is already 7-11 px off; forcing it onto the point while the shoulder stays 7-10 px off bends the arm wrongly.
+- Moving the whole body first (one camera-space shift per frame fitted to the 2D shoulders and hips) was worse everywhere. On 2338 it moved the body a median 419 mm, because the hips' 2D points are 43-46 px off there, with the legs out of frame. Dropped.
+- The elbow-and-wrist fit with a prior is level with or better than the baseline on 2338, 20728 and 4648, and 0.5 mm worse on 13858's arms (its wrist 42.7 → 41.5 mm and elbow 40.5 → 40.1 mm get better there; its shoulder gets 0.3 mm worse). Its acceleration error is level or lower on all four.
+
+**The prior's strength, in px of 2D miss per cm moved** (arms mm, 2D points smoothed; guitarist: left wrist px against its 2D point):
+
+| Prior | 2338 | 20728 | 4648 | 13858 | Guitarist wrist |
+|---|---|---|---|---|---|
+| none (as is) | 21.3 | 17.1 | 16.0 | 28.2 | 40 |
+| 3 | 21.4 | 15.5 | 16.4 | 29.6 | 7 |
+| 5 | 20.6 | 15.8 | 15.9 | 28.7 | 12 |
+| 8 | 20.3 | 16.2 | 15.8 | 28.3 | 20 |
+| 12 | 20.5 | 16.6 | 15.9 | 28.2 | 28 |
+
+Arm acceleration error is level or lower than the baseline at every strength on every clip. The wrist alone, in the 12-joint pose, gets better at every strength on 2338, 20728 and 13858 (2338: 42.2 → 33.6-39.5 mm).
+
+By eye (`arm_fit_guitar.jpg`, scratch: frames 25, 50, 75, 100, 125 and 140 of the guitarist's 30 fps copy), GEM-X's left wrist stops short of the fretting hand along the neck on frames 100, 125 and 140, and the fitted wrist (prior 5) sits at the hand. Neither moves the shoulder, which stays about 23 px from its 2D point.
+
+A prior in px per cm depends on resolution and distance: at the left wrist, 2338 has 7.2 px per cm, 20728 6.4, the guitarist 7.8, and walks 4648 and 13858 4.2 and 3.9. A 4K take has twice a 1080p take's.
+
+**Scale-free prior** (the 2D miss turned into cm at the joint's depth; prior = cm of 2D miss per cm moved), arms mm:
+
+| Prior | 2338 | 20728 | 4648 | 13858 | Guitarist wrist |
+|---|---|---|---|---|---|
+| none | 21.3 | 17.1 | 16.0 | 28.2 | 40 px |
+| 0.5 | 21.2 | 15.5 | 17.1 | 30.7 | 9 px |
+| 0.75 | 20.6 | 15.8 | 16.2 | 29.6 | 16 px |
+| 1 | 20.4 | 16.0 | 15.9 | 29.0 | 21 px |
+| 1.5 | 20.5 | 16.4 | 15.8 | 28.5 | 29 px |
+
+The far walks pull harder here than under the px prior, and 13858 gets worse at every strength. So on these clips the 2D points of a small, far person are worth less per cm than a close one's.
+
+**Attack: wrong 2D points.** The left and right 2D elbows and wrists were swapped on every tenth frame, before the time smoothing. Arms mm, plain fit then with a Cauchy robust loss at 10 cm scale (scipy `least_squares`):
+- 2338: prior 0.75, 30.3 / 26.4; prior 1, 24.6 / 23.1.
+- 20728: prior 0.75, 31.1 / 26.4; prior 1, 23.7 / 20.3.
+- 4648: prior 0.75, 24.4 / 24.9; prior 1, 20.9 / 20.1.
+- 13858: prior 0.75, 38.2 / 38.3; prior 1, 34.1 / 32.4.
+
+All are worse than GEM-X as is (17.1-28.2). On clean input the robust loss changes nothing (same numbers to 0.1 mm). It can't catch the swaps because the smoothing spreads each one over its neighbours first. So wrong points must be caught before smoothing, by a check that doesn't depend on the 2D detector.
+
+**Gated by SAM 3D Body.** This follows SAM 3D Body's own hand gate, which accepts a hand only if its 2D wrist is within 0.25 of the hand box from the body's wrist. A 2D elbow or wrist is used only where SAM 3D Body's projected joint (`out/mocap/pan_*-b8-mhr.npz`; guitarist `out/take/subway_guitar_busker/sam-mhr.npz`) is within a quarter of GEM-X's hand length of it, at GEM-X's depth, and SAM 3D Body found the person. Accepted points and their weights are smoothed together (normalised convolution, sigma 2 frames), so a correction blends in and out.
+- The gate keeps 79-99% of the Panoptic points.
+- On the guitarist it keeps 87% of the left wrist's points but only 20% of the left elbow's, where the elbow is behind the guitar. It keeps 100% of the right arm's.
+
+Arms mm (guitarist: left wrist px), px prior:
+
+| Variant | 2338 | 20728 | 4648 | 13858 | Guitarist wrist |
+|---|---|---|---|---|---|
+| as is | 21.3 | 17.1 | 16.0 | 28.2 | 40 |
+| gated, prior 3 | 21.4 | 15.5 | 16.2 | 29.0 | 8 |
+| gated, prior 5 | 20.7 | 15.9 | 15.8 | 28.4 | 14 |
+| gated, prior 8 | 20.5 | 16.3 | 15.8 | 28.2 | 22 |
+| gated, prior 5, swapped every tenth frame | 20.6 | 16.0 | 15.8 | 28.3 | 17 |
+
+- The gate removes the swap attack's harm completely, and changes nothing on clean input beyond 0.1-0.2 mm.
+- Gated prior 5 is 0.2 mm worse than the baseline on 13858's arms. There its elbow (40.5 → 40.0 mm) and wrist (42.7 → 41.9 mm) get better and its shoulder 0.2 mm worse.
+- Gated prior 8 is not worse on any clip, and gets the guitarist's wrist to 22 px.
+- Acceleration error is level or lower everywhere.
+
+**Resolution.** A px prior pulls twice as hard at 4K as at 1080p. GEM-X's 2D detector "consumes the central 192 columns of an affine 256-square crop" of the person box (`gem/common/pose2d/native77.py:6`, crop at line 52). So its error grows with the box, whatever the video's resolution. Measuring the 2D miss in percent of GEM-X's person box (`conditions.bbx_xys`) makes the fit the same at 720p, 1080p or 4K, and near or far. Box medians: guitarist 1258 px, 2338 1391, 20728 1243, 4648 860, 13858 917. The px prior 5 above equals a box prior of 0.36-0.40 on the close clips and 0.55-0.58 on the walks.
+
+Gated, box prior (arms mm; guitarist left wrist px):
+
+| Box prior | 2338 | 20728 | 4648 | 13858 | Guitarist wrist |
+|---|---|---|---|---|---|
+| as is | 21.3 | 17.1 | 16.0 | 28.2 | 40 |
+| 0.3 | 20.9 | 15.7 | 16.4 | 29.2 | 12 |
+| 0.35 | 20.7 | 15.8 | 16.1 | 28.9 | 14 |
+| 0.4 | 20.6 | 15.9 | 16.0 | 28.7 | 16 |
+| 0.5 | 20.4 | 16.1 | 15.8 | 28.4 | 21 |
+| 0.7 | 20.5 | 16.3 | 15.8 | 28.3 | 27 |
+| 1.0 | 20.7 | 16.6 | 15.8 | 28.2 | 32 |
+| 0.5, swapped every tenth frame | 20.4 | 16.1 | 15.8 | 28.4 | 23 |
+
+By eye at 0.5 (`arm_fit_guitar_box05.jpg`, scratch: frames 50, 75, 100, 110, 125, 140), the fitted wrist lies about halfway between GEM-X's wrist and the 2D wrist on frames 110, 125 and 140, still short of the fretting hand.
+
+At 0.4, swapped every tenth frame: 20.5, 16.0, 15.9, 28.6 mm, guitarist 18 px, the same as clean input.
+
+At box prior 0.4, 13858's arms are 0.5 mm worse (28.2 → 28.7). Its wrist (42.7 → 41.8 mm) and elbow (40.5 → 40.3 mm) get better there; the loss is in how the six arm joints line up as a group. At no strength that moves the guitarist's wrist below 20 px is 13858 level. Acceleration error is lower than GEM-X's at every strength on all four clips.
+
+**Result of the re-attack.** The 2026-11-05 rec (wrist IK onto the 2D point at GEM-X's depth) is withdrawn; it failed on both walks. What survived, and what changed it:
+- the elbow is fitted too, not only the wrist;
+- a 3D prior keeps the arm near GEM-X's, since forcing the 2D points made the walks worse;
+- the 2D points are smoothed over time, since unsmoothed they raised arm acceleration error by up to 25%;
+- SAM 3D Body agreement gates each 2D point, from the swap attack;
+- the 2D miss is measured in percent of GEM-X's person box, so 4K pulls no harder than 1080p (`native77.py:6`).
+
+The new rec is in TASKS item 1.
+
+SMPLify-X's own code ([`fitting.py`](https://github.com/vchoutas/smplify-x/blob/master/smplifyx/fitting.py), read) applies a robustifier to the 2D difference, `joint_diff = self.robustifier(gt_joints - projected_joints)`, and adds a body pose prior term. The robustifier is `GMoF` ([`utils.py`](https://github.com/vchoutas/smplify-x/blob/master/smplifyx/utils.py), read), which returns `rho ** 2 * r ** 2 / (r ** 2 + rho ** 2)`, the Geman-McClure penalty.
+
+SOMA ships no 2D fitter: `soma/fitting` holds PoseInversion and the RTS smoother only.
+
+**How others line the body up with the 2D points** (searches 2026-11-06):
+- "latest techniques refine 3D human pose to match 2D keypoints after regression 2025": [ReFit](https://arxiv.org/abs/2308.11184) (a learned feedback loop), [Personalized 3D Human Pose and Shape Refinement](https://arxiv.org/abs/2403.11634) (dense 2D correspondences instead of sparse keypoints, because "the resulting human meshes are extremely sensitive to the quality of the given 2D joints"). Both need SMPL-trained weights. Unread beyond the abstracts.
+- "is there anything better than SMPLify for fitting body pose to 2D keypoints test-time refinement": EFT, SMPLify-X with VPoser, CameraHMR's SMPLify refits, a learned one-step "Learnable SMPLify", Key2Mesh. All SMPL-family. Search snippets only.
+- "AI mocap from video hands not lined up with video arm wrong position fix": suit-mocap calibration threads on Reallusion's forum and a Blender add-on's changelog. Nothing on 2D refits.
+
+So the standard method is SMPLify-style fitting: a 2D reprojection term with a robust penalty, plus a prior that keeps the pose plausible. Its learned priors and successors are SMPL-trained, and our skeleton is SOMA. Tamaththul3D (research notes, `hands.md:167`) refines only the shoulder against a confidence-weighted 2D loss, with no released code.
+
 ### 2026-11-05, GEM-X's person and the floor plant in `mocap.js`, card used
 
 **Guitarist, `node bench/mocap.js subway_guitar_busker.mp4`** (1280×720, 24 fps, so 151 frames in the 30 fps copy; GEM-X's default lens). It ran end to end:
