@@ -40,7 +40,19 @@ By eye, on the preview every 25 frames (0-150), the skeleton is on the guitarist
 - GEM-X's motion post-process has no 2D refit (searched `gem/` for reproj, refine, smplify, fit_2d).
 - On Panoptic's measured arms, GEM-X's arms and shoulders beat SAM 3D Body's on all four clips (17-28 mm against 25-38 mm, 2026-10-31 below). Simply taking SAM 3D Body's arm would undo that.
 - Recipe item 3 of the research ("Join the wrist with forearm IK and gates … Fall back to the body's wrist", research file line 42) was never built: the join always falls back to GEM-X's wrist.
-- Untested so far: the lens. The clip has no focal tag, so GEM-X used its default (focal length = image diagonal). The fretting hand is reached toward the camera, where a wrong focal length moves the projection most.
+- **The lens is ruled out.** GEM-X was rerun on the 30 fps copy with 26 mm and 70 mm (35 mm equivalent; configs and outputs in `out/lens_test/`), beside the default of about 43 mm (`wrist_vs_2d.py`, scratch). Median and p90 px against GEM-X's own 2D points:
+
+  | Lens | Left wrist | Left elbow | Right wrist |
+  |---|---|---|---|
+  | 26 mm | 39/102 | 41/99 | 11/33 |
+  | default | 40/94 | 37/83 | 8/23 |
+  | 70 mm | 41/87 | 36/72 | 6/21 |
+
+  On walk 4648 the same measure gives 6-9 px for every arm joint. On `test60_2338` (close, legs out of frame) it gives 20-25 px for every arm joint, shoulders included.
+- **How others place the hand:**
+  - SAM 3D Body gates its hand decoder's wrist: angle difference, hand box size, keypoints inside the crop, and the hand's wrist within 0.25 of the hand box from the body's wrist in 2D. It then re-prompts the body decoder with those wrists and the body's elbows, and runs an IK update (`comfy/ldm/sam3d_body/model/model.py:740-809, 952`).
+  - HTD-Refine (in RGB MoCap, AGPL-3.0, SMPL's 22 joints, pytorch3d) runs a distance-gated CCD IK on each wrist chain, blended softly by a rational weight of the displacement (`rgbmocap/third_party/HTD-Refine/optimization/postprocess.py:15-99`).
+- **Tried and inconclusive:** removing the body's shared 2D shift (the mean error of shoulders and hips) before scoring the wrist (`wrist_residual.py`, scratch). The models define shoulders and hips differently from the 2D points: SAM 3D Body's shared shift is 38 px on the guitarist against GEM-X's 18. So the residuals mix in definition offsets and don't separate an arm error from a whole-body error. Panoptic's measured joints can.
 
 **Walk 4648, `node bench/mocap.js pan_walk4648.mp4`**, the full chain with the floor plant on and GEM-X's person (1920×1080, 300 frames, GEM-X's default lens). It ran end to end:
 - GEM-X 277 s.
