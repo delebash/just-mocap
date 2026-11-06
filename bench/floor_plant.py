@@ -1,7 +1,8 @@
 """Floor plant for GEM-X's contact cleanup: planted feet held on one floor, so the world motion doesn't drift up or down.
 GEM-X's correct_static_translation sums the planted joints' vertical slips into the root, 26-30 cm over a 10 s walk
-(RESEARCH.md, 2026-11-03 and 2026-11-04). CPU only. Measured and not in mocap.js: it misses its keep-test on foot slide
-(0.1-0.4 mm worse) and adds bob to planted feet (RESEARCH.md, 2026-11-04).
+(RESEARCH.md, 2026-11-03 and 2026-11-04). CPU only. Measured on six walks (RESEARCH.md, 2026-11-04, corrected 2026-11-05):
+it misses its keep-test on foot slide (0.1-0.4 mm worse) and acceleration error (0.6-1.2% worse), and adds bob to planted
+feet.
 
 GEM-X's own two post-process steps run as GEM-X runs them (gem/motion/postprocess/api.py:98-99), with one step between:
 1. correct_static_translation: GEM-X's root path from its contacts.
